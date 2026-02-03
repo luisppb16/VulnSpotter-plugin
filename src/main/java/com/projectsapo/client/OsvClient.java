@@ -18,6 +18,7 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
@@ -31,6 +32,7 @@ import java.util.concurrent.Executors;
  */
 public class OsvClient {
 
+  private static final int BATCH_SIZE = 500;
   private final HttpClient httpClient;
   private final ObjectMapper objectMapper;
   private final ExecutorService executorService;
@@ -104,6 +106,37 @@ public class OsvClient {
       List<OsvPackage> packages) {
     Objects.requireNonNull(packages, "Packages list cannot be null");
 
+    if (packages.isEmpty()) {
+      return CompletableFuture.completedFuture(Optional.of(new OsvBatchResponse(List.of())));
+    }
+
+    List<List<OsvPackage>> chunks = new ArrayList<>();
+    for (int i = 0; i < packages.size(); i += BATCH_SIZE) {
+      chunks.add(packages.subList(i, Math.min(i + BATCH_SIZE, packages.size())));
+    }
+
+    List<CompletableFuture<Optional<OsvBatchResponse>>> futures =
+        chunks.stream().map(this::checkDependenciesInBatch).toList();
+
+    CompletableFuture<?>[] futuresArray = futures.toArray(new CompletableFuture<?>[0]);
+
+    return CompletableFuture.allOf(futuresArray)
+        .thenApply(
+            v -> {
+              List<OsvResponse> allResults = new ArrayList<>();
+              for (CompletableFuture<Optional<OsvBatchResponse>> future : futures) {
+                Optional<OsvBatchResponse> chunkRes = future.join();
+                if (chunkRes.isEmpty()) {
+                  return Optional.empty();
+                }
+                allResults.addAll(chunkRes.get().results());
+              }
+              return Optional.of(new OsvBatchResponse(allResults));
+            });
+  }
+
+  private CompletableFuture<Optional<OsvBatchResponse>> checkDependenciesInBatch(
+      List<OsvPackage> packages) {
     return CompletableFuture.supplyAsync(
         () -> {
           try {
@@ -124,9 +157,7 @@ public class OsvClient {
                 httpClient.send(request, HttpResponse.BodyHandlers.ofString());
 
             if (response.statusCode() == 200) {
-              OsvBatchResponse batchResponse =
-                  objectMapper.readValue(response.body(), OsvBatchResponse.class);
-              return Optional.of(batchResponse);
+              return Optional.of(objectMapper.readValue(response.body(), OsvBatchResponse.class));
             } else {
               return Optional.empty();
             }
