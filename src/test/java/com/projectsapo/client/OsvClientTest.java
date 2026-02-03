@@ -7,7 +7,6 @@ package com.projectsapo.client;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -25,6 +24,7 @@ import java.net.http.HttpResponse;
 import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import org.junit.jupiter.api.BeforeEach;
@@ -63,8 +63,8 @@ class OsvClientTest {
       String json = "{\"vulns\": []}";
       when(httpResponse.statusCode()).thenReturn(200);
       when(httpResponse.body()).thenReturn(json);
-      when(httpClient.send(any(HttpRequest.class), any(HttpResponse.BodyHandler.class)))
-          .thenReturn(httpResponse);
+      when(httpClient.sendAsync(any(HttpRequest.class), any(HttpResponse.BodyHandler.class)))
+          .thenReturn(CompletableFuture.completedFuture(httpResponse));
 
       // When
       Optional<OsvResponse> result = client.checkDependency("pkg", "1.0", "Maven").join();
@@ -73,7 +73,7 @@ class OsvClientTest {
       assertThat(result).isPresent();
 
       ArgumentCaptor<HttpRequest> captor = ArgumentCaptor.forClass(HttpRequest.class);
-      verify(httpClient).send(captor.capture(), any());
+      verify(httpClient).sendAsync(captor.capture(), any());
       HttpRequest request = captor.getValue();
       assertThat(request.uri()).isEqualTo(URI.create(ProjectConstants.OSV_API_URL));
       assertThat(request.method()).isEqualTo("POST");
@@ -85,8 +85,8 @@ class OsvClientTest {
       // Given
       when(httpResponse.statusCode()).thenReturn(200);
       when(httpResponse.body()).thenReturn("{}");
-      when(httpClient.send(any(HttpRequest.class), any(HttpResponse.BodyHandler.class)))
-          .thenReturn(httpResponse);
+      when(httpClient.sendAsync(any(HttpRequest.class), any(HttpResponse.BodyHandler.class)))
+          .thenReturn(CompletableFuture.completedFuture(httpResponse));
 
       // When
       Optional<OsvResponse> result = client.checkDependency("pkg", "1.0", "Maven").join();
@@ -100,8 +100,8 @@ class OsvClientTest {
     void shouldReturnEmptyWhenError() throws Exception {
       // Given
       when(httpResponse.statusCode()).thenReturn(404);
-      when(httpClient.send(any(HttpRequest.class), any(HttpResponse.BodyHandler.class)))
-          .thenReturn(httpResponse);
+      when(httpClient.sendAsync(any(HttpRequest.class), any(HttpResponse.BodyHandler.class)))
+          .thenReturn(CompletableFuture.completedFuture(httpResponse));
 
       // When
       Optional<OsvResponse> result = client.checkDependency("pkg", "1.0", "Maven").join();
@@ -114,8 +114,8 @@ class OsvClientTest {
     @DisplayName("should_return_empty_on_exception")
     void shouldReturnEmptyOnException() throws Exception {
       // Given
-      when(httpClient.send(any(HttpRequest.class), any(HttpResponse.BodyHandler.class)))
-          .thenThrow(new IOException("Network error"));
+      when(httpClient.sendAsync(any(HttpRequest.class), any(HttpResponse.BodyHandler.class)))
+          .thenReturn(CompletableFuture.failedFuture(new IOException("Network error")));
 
       // When
       Optional<OsvResponse> result = client.checkDependency("pkg", "1.0", "Maven").join();
@@ -139,8 +139,8 @@ class OsvClientTest {
       String jsonResponse = "{\"results\": [{\"vulns\": []}]}";
       when(httpResponse.statusCode()).thenReturn(200);
       when(httpResponse.body()).thenReturn(jsonResponse);
-      when(httpClient.send(any(HttpRequest.class), any(HttpResponse.BodyHandler.class)))
-          .thenReturn(httpResponse);
+      when(httpClient.sendAsync(any(HttpRequest.class), any(HttpResponse.BodyHandler.class)))
+          .thenReturn(CompletableFuture.completedFuture(httpResponse));
 
       // When
       Optional<OsvBatchResponse> result = client.checkDependencies(packages).join();
@@ -150,7 +150,7 @@ class OsvClientTest {
       assertThat(result.get().results()).hasSize(1);
 
       ArgumentCaptor<HttpRequest> captor = ArgumentCaptor.forClass(HttpRequest.class);
-      verify(httpClient).send(captor.capture(), any());
+      verify(httpClient).sendAsync(captor.capture(), any());
       HttpRequest request = captor.getValue();
       assertThat(request.uri()).isEqualTo(URI.create(ProjectConstants.OSV_API_BATCH_URL));
     }
@@ -160,8 +160,8 @@ class OsvClientTest {
     void shouldReturnEmptyOnError() throws Exception {
        // Given
       when(httpResponse.statusCode()).thenReturn(500);
-      when(httpClient.send(any(HttpRequest.class), any(HttpResponse.BodyHandler.class)))
-          .thenReturn(httpResponse);
+      when(httpClient.sendAsync(any(HttpRequest.class), any(HttpResponse.BodyHandler.class)))
+          .thenReturn(CompletableFuture.completedFuture(httpResponse));
 
       // When
       Optional<OsvBatchResponse> result = client.checkDependencies(List.of(new OsvPackage("a", "b", "c"))).join();
