@@ -18,6 +18,8 @@ import com.intellij.openapi.project.Project;
 import com.intellij.openapi.wm.ToolWindow;
 import com.intellij.openapi.wm.ToolWindowManager;
 import com.projectsapo.service.VulnerabilityScannerService;
+import com.projectsapo.ui.SapoToolWindow;
+import com.projectsapo.ui.SapoToolWindowFactory;
 import java.util.List;
 import org.jetbrains.annotations.NotNull;
 
@@ -32,10 +34,21 @@ public class CheckVulnerabilitiesAction extends AnAction {
     Project project = e.getProject();
     if (project == null) return;
 
-    // Activate the ToolWindow if it exists
+    // Activate the ToolWindow and trigger scan
     ToolWindow toolWindow = ToolWindowManager.getInstance(project).getToolWindow(TITLE);
     if (toolWindow != null) {
-      toolWindow.show();
+      toolWindow.show(
+          () -> {
+            com.intellij.ui.content.Content content = toolWindow.getContentManager().getContent(0);
+            if (content != null) {
+              SapoToolWindow sapoToolWindow =
+                  content.getUserData(SapoToolWindowFactory.SAPO_TOOL_WINDOW_KEY);
+              if (sapoToolWindow != null) {
+                sapoToolWindow.runScan();
+              }
+            }
+          });
+      return;
     }
 
     ProgressManager.getInstance()

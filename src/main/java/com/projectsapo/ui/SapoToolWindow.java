@@ -11,7 +11,11 @@ import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.ui.Splitter;
 import com.intellij.ui.ColorUtil;
+import com.intellij.ui.DocumentAdapter;
 import com.intellij.ui.JBColor;
+import com.intellij.ui.SearchTextField;
+import com.intellij.ui.components.JBCheckBox;
+import com.intellij.ui.components.JBLabel;
 import com.intellij.ui.components.JBScrollPane;
 import com.intellij.ui.jcef.JBCefBrowser;
 import com.intellij.ui.jcef.JBCefClient;
@@ -55,7 +59,7 @@ import org.cef.network.CefRequest;
  * Modern UI for Project Sapo using JCEF. Replicates Snyk's design for dependency chains and
  * severity badges.
  */
-public class SapoToolWindow {
+public final class SapoToolWindow {
 
   private static final String UNKNOWN = "Unknown";
   private static final String CRITICAL = "CRITICAL";
@@ -75,12 +79,17 @@ public class SapoToolWindow {
   private static final JBColor COLOR_LOW = new JBColor(0x33691E, 0x33691E);
 
   private final JPanel content;
+  private final CardLayout cardLayout = new CardLayout();
+  private final JPanel mainPanel;
   private final JBTable resultsTable;
   private final DefaultTableModel tableModel;
   private final JBCefBrowser browser;
   private final Project project;
   private final JButton scanButton;
   private final JLabel statusLabel;
+  private final SearchTextField searchField;
+  private final JBCheckBox vulnerableOnlyCheckbox;
+  private final JProgressBar progressBar;
   private final List<VulnerabilityScannerService.ScanResult> scanResults = new ArrayList<>();
   private final NumberFormat numberFormat = NumberFormat.getInstance(Locale.ROOT);
 
@@ -116,20 +125,50 @@ public class SapoToolWindow {
           this.browser.getCefBrowser());
     }
 
-    JPanel toolbar = new JPanel(new FlowLayout(FlowLayout.LEFT));
-    scanButton = new JButton("Scan Dependencies");
+    JPanel toolbar = new JPanel(new BorderLayout());
+    toolbar.setBorder(JBUI.Borders.empty(4, 8));
+
+    JPanel leftActions = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 0));
+    scanButton = new JButton("Scan Dependencies", AllIcons.Actions.Execute);
     scanButton.addActionListener(e -> runScan());
+    leftActions.add(scanButton);
+
     statusLabel = new JLabel("Ready");
-    statusLabel.setBorder(JBUI.Borders.emptyLeft(10));
-    toolbar.add(scanButton);
-    toolbar.add(statusLabel);
+    leftActions.add(statusLabel);
+
+    progressBar = new JProgressBar();
+    progressBar.setIndeterminate(true);
+    progressBar.setVisible(false);
+    progressBar.setPreferredSize(new Dimension(100, 16));
+    leftActions.add(progressBar);
+
+    JPanel rightActions = new JPanel(new FlowLayout(FlowLayout.RIGHT, 10, 0));
+    vulnerableOnlyCheckbox = new JBCheckBox("Vulnerable only");
+    vulnerableOnlyCheckbox.addActionListener(e -> applyFilters());
+
+    searchField = new SearchTextField();
+    searchField.addDocumentListener(
+        new DocumentAdapter() {
+          @Override
+          protected void textChanged(javax.swing.event.DocumentEvent e) {
+            applyFilters();
+          }
+        });
+    searchField.setPreferredSize(new Dimension(200, searchField.getPreferredSize().height));
+
+    rightActions.add(vulnerableOnlyCheckbox);
+    rightActions.add(searchField);
+
+    toolbar.add(leftActions, BorderLayout.WEST);
+    toolbar.add(rightActions, BorderLayout.EAST);
     content.add(toolbar, BorderLayout.NORTH);
 
     Splitter splitter = new Splitter(false, 0.35f);
 
     // Updated column name to "Severity"
     tableModel =
-        new DefaultTableModel(new String[] {"Severity", "Dependency", "Version", "Vulns"}, 0) {
+        new DefaultTableModel(
+            new String[] {"Severity", "Dependency", "Version", "Fixed In", "Vulns"}, 0) {
           @Override
           public boolean isCellEditable(int row, int column) {
             return false;
@@ -138,7 +177,7 @@ public class SapoToolWindow {
           @Override
           public Class<?> getColumnClass(int columnIndex) {
             if (columnIndex == 0) return Icon.class;
-            if (columnIndex == 3) return Integer.class;
+            if (columnIndex == 4) return Integer.class;
             return String.class;
           }
         };
@@ -157,6 +196,11 @@ public class SapoToolWindow {
     iconColumn.setMaxWidth(80);
     iconColumn.setMinWidth(60);
 
+    TableColumn vulnsColumn = resultsTable.getColumnModel().getColumn(4);
+    vulnsColumn.setPreferredWidth(50);
+    vulnsColumn.setMaxWidth(70);
+    vulnsColumn.setMinWidth(40);
+
     resultsTable
         .getSelectionModel()
         .addListSelectionListener(
@@ -172,14 +216,76 @@ public class SapoToolWindow {
 
     splitter.setFirstComponent(new JBScrollPane(resultsTable));
     splitter.setSecondComponent(browser.getComponent());
-    content.add(splitter, BorderLayout.CENTER);
+
+    mainPanel = new JPanel(cardLayout);
+    mainPanel.add(createEmptyStatePanel(), "EMPTY");
+    mainPanel.add(splitter, "RESULTS");
+
+    content.add(mainPanel, BorderLayout.CENTER);
+    cardLayout.show(mainPanel, "EMPTY");
+
     browser.loadHTML(
         generateHtml("<h1>Project Sapo</h1><p>Select a dependency to see details.</p>"));
   }
 
-  private void runScan() {
+  private JPanel createEmptyStatePanel() {
+    JPanel panel = new JPanel(new GridBagLayout());
+    GridBagConstraints gbc = new GridBagConstraints();
+    gbc.gridx = 0;
+    gbc.gridy = 0;
+    gbc.insets = JBUI.insets(10);
+
+    JLabel iconLabel = new JLabel(IconUtil.toSize(AllIcons.General.Warning, 64, 64));
+    panel.add(iconLabel, gbc);
+
+    gbc.gridy++;
+    JLabel titleLabel = new JLabel("No dependencies scanned yet");
+    titleLabel.setFont(titleLabel.getFont().deriveFont(Font.BOLD, 16f));
+    panel.add(titleLabel, gbc);
+
+    gbc.gridy++;
+    JLabel descLabel =
+        new JLabel("Scan your project to detect security vulnerabilities in your dependencies.");
+    descLabel.setForeground(UIUtil.getContextHelpForeground());
+    panel.add(descLabel, gbc);
+
+    gbc.gridy++;
+    JButton bigScanButton = new JButton("Scan Project Dependencies", AllIcons.Actions.Execute);
+    bigScanButton.addActionListener(e -> runScan());
+    panel.add(bigScanButton, gbc);
+
+    return panel;
+  }
+
+  private void applyFilters() {
+    @SuppressWarnings("unchecked")
+    TableRowSorter<DefaultTableModel> sorter =
+        (TableRowSorter<DefaultTableModel>) resultsTable.getRowSorter();
+    if (sorter == null) return;
+
+    String searchText = searchField.getText().toLowerCase();
+    boolean vulnerableOnly = vulnerableOnlyCheckbox.isSelected();
+
+    sorter.setRowFilter(
+        new RowFilter<>() {
+          @Override
+          public boolean include(Entry<? extends DefaultTableModel, ? extends Integer> entry) {
+            String name = entry.getStringValue(1).toLowerCase();
+            boolean matchesSearch = name.contains(searchText);
+
+            if (vulnerableOnly) {
+              int vulns = (Integer) entry.getValue(4);
+              return matchesSearch && vulns > 0;
+            }
+            return matchesSearch;
+          }
+        });
+  }
+
+  public void runScan() {
     scanButton.setEnabled(false);
     statusLabel.setText("Scanning...");
+    progressBar.setVisible(true);
     tableModel.setRowCount(0);
     scanResults.clear();
     scrapedVersions.clear(); // Clear cache on new scan
@@ -198,18 +304,23 @@ public class SapoToolWindow {
                           int firstRow = dataVector.size();
                           for (VulnerabilityScannerService.ScanResult result : results) {
                             String highestSev = getHighestSeverity(result.vulnerabilities());
-                            Vector<Object> row = new Vector<>(4);
+                            String fixedVer = getAggregateFixedVersion(result);
+                            Vector<Object> row = new Vector<>(5);
                             row.add(getSeverityIcon(highestSev));
                             row.add(result.pkg().name());
                             row.add(result.pkg().version());
+                            row.add(fixedVer);
                             row.add(result.vulnerabilities().size());
                             dataVector.add(row);
                           }
                           if (!results.isEmpty()) {
                             tableModel.fireTableRowsInserted(firstRow, dataVector.size() - 1);
+                            cardLayout.show(mainPanel, "RESULTS");
                           }
                           scanButton.setEnabled(true);
                           statusLabel.setText("Scan complete (" + results.size() + ")");
+                          progressBar.setVisible(false);
+                          applyFilters();
                         }))
         .exceptionally(
             ex -> {
@@ -218,9 +329,22 @@ public class SapoToolWindow {
                       () -> {
                         scanButton.setEnabled(true);
                         statusLabel.setText("Scan failed");
+                        progressBar.setVisible(false);
                       });
               return null;
             });
+  }
+
+  private String getAggregateFixedVersion(VulnerabilityScannerService.ScanResult result) {
+    if (!result.vulnerable()) return "";
+    Set<String> fixedVersions = new HashSet<>();
+    for (OsvVulnerability vuln : result.vulnerabilities()) {
+      String f = findFixedVersion(vuln, result.pkg().name());
+      if (!UNKNOWN.equals(f)) {
+        fixedVersions.add(f);
+      }
+    }
+    return fixedVersions.isEmpty() ? UNKNOWN : String.join(", ", fixedVersions);
   }
 
   private void showDetails(VulnerabilityScannerService.ScanResult result) {
@@ -375,6 +499,7 @@ public class SapoToolWindow {
         fixedV = scrapedVersions.get(vuln.id());
       }
 
+      String score = getScore(vuln);
       sb.append("<div class='card'>");
       sb.append("<div class='card-header'>");
       sb.append("<span class='badge ")
@@ -382,6 +507,9 @@ public class SapoToolWindow {
           .append("'>")
           .append(sev)
           .append("</span>");
+      if (score != null) {
+        sb.append("<span class='cvss-score'>CVSS ").append(score).append("</span>");
+      }
       sb.append("<span class='vuln-id'><a href='https://osv.dev/vulnerability/")
           .append(vuln.id())
           .append("'>")
@@ -393,7 +521,13 @@ public class SapoToolWindow {
           .append(DIV_CLOSE);
       sb.append("<div class='fixed-box'>Fixed in: <span class='fixed-ver'>")
           .append(fixedV)
-          .append("</span></div>");
+          .append("</span>");
+      if (!UNKNOWN.equals(fixedV)) {
+        sb.append(" <button class='copy-btn' onclick=\"copyToClipboard('")
+            .append(fixedV)
+            .append("')\">Copy</button>");
+      }
+      sb.append(DIV_CLOSE);
       sb.append("<div class='details'>")
           .append(vuln.details() != null ? vuln.details().replace("\n", "<br>") : "")
           .append(DIV_CLOSE);
@@ -498,6 +632,15 @@ public class SapoToolWindow {
             });
   }
 
+  private String getScore(OsvVulnerability v) {
+    if (v.severity() == null) return null;
+    return v.severity().stream()
+        .filter(s -> "CVSS_V3".equals(s.type()) || "CVSS_V2".equals(s.type()))
+        .map(OsvVulnerability.Severity::score)
+        .findFirst()
+        .orElse(null);
+  }
+
   private String generateHtml(String bodyContent) {
     boolean isDark = ColorUtil.isDark(UIUtil.getPanelBackground());
     String bgColor = isDark ? "#1e1e1e" : "#ffffff";
@@ -506,40 +649,75 @@ public class SapoToolWindow {
     String borderColor = isDark ? "#454545" : "#e0e0e0";
 
     return "<html><head><style>"
-        + "body { font-family: 'Inter', sans-serif; padding: 24px; background: "
+        + "body { font-family: 'Inter', -apple-system, sans-serif; padding: 24px; background: "
         + bgColor
         + "; color: "
         + textColor
-        + "; line-height: 1.5; }"
-        + "h1 { font-size: 20px; font-weight: 600; margin: 0; }"
-        + ".version { color: #888; margin-top: 4px; margin-bottom: 16px; font-size: 13px; }"
-        + ".section-title { font-weight: bold; margin-top: 16px; margin-bottom: 8px; font-size: 14px; }"
-        + ".safe-banner { background: rgba(67, 160, 71, 0.1); color: #2e7d32; padding: 12px; border-radius: 4px; font-weight: 600; margin-top: 16px; margin-bottom: 16px; }"
-        + ".path-header { font-weight: bold; margin-top: 12px; margin-bottom: 4px; color: #2196f3; font-size: 14px; }"
-        + ".snyk-chain { font-family: 'JetBrains Mono', monospace; margin: 8px 0; font-size: 13px; }"
+        + "; line-height: 1.6; }"
+        + "h1 { font-size: 24px; font-weight: 700; margin: 0; color: "
+        + (isDark ? "#ffffff" : "#000000")
+        + "; }"
+        + ".version { color: #888; margin-top: 4px; margin-bottom: 24px; font-size: 14px; }"
+        + ".section-title { font-weight: 700; margin-top: 24px; margin-bottom: 12px; font-size: 16px; border-bottom: 1px solid "
+        + borderColor
+        + "; padding-bottom: 8px; }"
+        + ".safe-banner { background: rgba(67, 160, 71, 0.1); color: #43a047; padding: 16px; border-radius: 8px; font-weight: 600; margin: 24px 0; border: 1px solid #43a047; }"
+        + ".path-header { font-weight: 600; margin-top: 16px; margin-bottom: 8px; color: #2196f3; font-size: 14px; }"
+        + ".snyk-chain { font-family: 'JetBrains Mono', monospace; background: "
+        + (isDark ? "#2d2d2d" : "#f5f5f5")
+        + "; padding: 12px; border-radius: 6px; margin: 8px 0; font-size: 13px; }"
         + ".chain-item { padding: 4px 0; display: flex; align-items: center; }"
         + ".connector { color: #888; margin-right: 8px; }"
         + ".icon { margin-right: 6px; }"
-        + ".target { color: #e53935; font-weight: bold; }"
+        + ".target { color: #e53935; font-weight: 700; }"
         + ".remediation-box { background: "
         + (isDark ? "#1a2a3a" : "#e3f2fd")
-        + "; border: 1px solid #2196f3; border-radius: 4px; padding: 12px; margin-top: 8px; margin-bottom: 16px; }"
-        + ".remediation-title { font-weight: 800; color: #2196f3; text-transform: uppercase; font-size: 11px; margin-bottom: 4px; }"
+        + "; border: 1px solid #2196f3; border-radius: 8px; padding: 16px; margin: 16px 0; }"
+        + ".remediation-title { font-weight: 800; color: #2196f3; text-transform: uppercase; font-size: 12px; margin-bottom: 8px; letter-spacing: 0.5px; }"
         + ".card { background: "
         + cardBg
         + "; border: 1px solid "
         + borderColor
-        + "; border-radius: 8px; padding: 16px; margin-bottom: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }"
-        + ".badge { padding: 4px 8px; border-radius: 4px; color: white; font-size: 11px; font-weight: 800; margin-right: 12px; text-transform: uppercase; }"
-        + ".critical { background: #b71c1c; } .high { background: #e65100; } .medium { background: #f57f17; color: white; } .low { background: #33691e; }"
-        + ".fixed-box { background: rgba(67, 160, 71, 0.1); color: #2e7d32; padding: 4px 8px; border-radius: 4px; font-weight: 600; display: inline-block; margin: 8px 0; }"
-        + ".references-section { margin-top: 16px; border-top: 1px solid "
+        + "; border-radius: 12px; padding: 20px; margin-bottom: 20px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); }"
+        + ".card-header { display: flex; align-items: center; margin-bottom: 12px; gap: 10px; }"
+        + ".badge { padding: 4px 10px; border-radius: 20px; color: white; font-size: 11px; font-weight: 700; text-transform: uppercase; }"
+        + ".cvss-score { font-size: 12px; font-weight: 600; color: #888; background: "
+        + (isDark ? "#333" : "#eee")
+        + "; padding: 2px 8px; border-radius: 4px; }"
+        + ".critical { background: #d32f2f; } .high { background: #f57c00; } .medium { background: #fbc02d; color: #333; } .low { background: #43a047; }"
+        + ".vuln-id { font-weight: 600; font-size: 14px; }"
+        + ".vuln-summary { font-size: 16px; font-weight: 600; margin-bottom: 12px; color: "
+        + (isDark ? "#eee" : "#222")
+        + "; }"
+        + ".fixed-box { background: rgba(67, 160, 71, 0.1); color: #2e7d32; padding: 8px 12px; border-radius: 6px; font-weight: 600; display: inline-flex; align-items: center; gap: 8px; margin: 12px 0; border: 1px solid rgba(67, 160, 71, 0.2); }"
+        + ".copy-btn { cursor: pointer; background: #2196f3; color: white; border: none; padding: 2px 8px; border-radius: 4px; font-size: 10px; transition: background 0.2s; }"
+        + ".copy-btn:hover { background: #1976d2; }"
+        + ".details { font-size: 13px; color: #888; margin-top: 12px; max-height: 150px; overflow-y: auto; background: "
+        + (isDark ? "#1e1e1e" : "#fcfcfc")
+        + "; padding: 10px; border-radius: 4px; }"
+        + ".references-section { margin-top: 20px; border-top: 1px solid "
         + borderColor
-        + "; padding-top: 12px; }"
-        + ".references-title { font-weight: 800; color: #888; text-transform: uppercase; font-size: 10px; margin-bottom: 8px; }"
-        + ".reference-item { font-size: 12px; margin-bottom: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }"
-        + "a { color: #2196f3; text-decoration: none; } a:hover { text-decoration: underline; }"
-        + "</style></head><body>"
+        + "; padding-top: 16px; }"
+        + ".references-title { font-weight: 800; color: #888; text-transform: uppercase; font-size: 11px; margin-bottom: 10px; }"
+        + ".reference-item { font-size: 12px; margin-bottom: 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }"
+        + "a { color: #2196f3; text-decoration: none; font-weight: 500; } a:hover { text-decoration: underline; }"
+        + "code { font-family: 'JetBrains Mono', monospace; background: rgba(0,0,0,0.05); padding: 2px 4px; border-radius: 3px; }"
+        + "</style>"
+        + "<script>"
+        + "function copyToClipboard(text) {"
+        + "  const el = document.createElement('textarea');"
+        + "  el.value = text;"
+        + "  document.body.appendChild(el);"
+        + "  el.select();"
+        + "  document.execCommand('copy');"
+        + "  document.body.removeChild(el);"
+        + "  const btn = event.target;"
+        + "  const originalText = btn.innerText;"
+        + "  btn.innerText = 'Copied!';"
+        + "  setTimeout(() => btn.innerText = originalText, 2000);"
+        + "}"
+        + "</script>"
+        + "</head><body>"
         + bodyContent
         + "</body></html>";
   }

@@ -21,6 +21,8 @@ import com.intellij.openapi.wm.ToolWindow;
 import com.intellij.openapi.wm.ToolWindowManager;
 import com.intellij.util.messages.MessageBus;
 import com.projectsapo.service.VulnerabilityScannerService;
+import com.projectsapo.ui.SapoToolWindow;
+import com.projectsapo.ui.SapoToolWindowFactory;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.Consumer;
 import org.junit.jupiter.api.AfterEach;
@@ -41,6 +43,9 @@ class CheckVulnerabilitiesActionTest {
   @Mock private Project project;
   @Mock private ToolWindowManager toolWindowManager;
   @Mock private ToolWindow toolWindow;
+  @Mock private com.intellij.ui.content.ContentManager contentManager;
+  @Mock private com.intellij.ui.content.Content content;
+  @Mock private SapoToolWindow sapoToolWindow;
   @Mock private ProgressManager progressManager;
   @Mock private VulnerabilityScannerService scannerService;
   @Mock private Application application;
@@ -68,6 +73,15 @@ class CheckVulnerabilitiesActionTest {
     
     toolWindowManagerMock.when(() -> ToolWindowManager.getInstance(project)).thenReturn(toolWindowManager);
     when(toolWindowManager.getToolWindow("Project Sapo")).thenReturn(toolWindow);
+    when(toolWindow.getContentManager()).thenReturn(contentManager);
+    when(contentManager.getContent(0)).thenReturn(content);
+    when(content.getUserData(SapoToolWindowFactory.SAPO_TOOL_WINDOW_KEY)).thenReturn(sapoToolWindow);
+
+    doAnswer(invocation -> {
+        Runnable r = invocation.getArgument(0);
+        if (r != null) r.run();
+        return null;
+    }).when(toolWindow).show(any(Runnable.class));
     
     progressManagerMock.when(ProgressManager::getInstance).thenReturn(progressManager);
     
@@ -93,8 +107,20 @@ class CheckVulnerabilitiesActionTest {
   }
 
   @Test
-  void testActionPerformed() {
+  void testActionPerformedWithToolWindow() {
+    // Act
+    action.actionPerformed(event);
+
+    // Assert
+    verify(toolWindow).show(any(Runnable.class));
+    verify(sapoToolWindow).runScan();
+  }
+
+  @Test
+  void testActionPerformedWithoutToolWindow() {
     // Arrange
+    when(toolWindowManager.getToolWindow("Project Sapo")).thenReturn(null);
+
     // Mock the ProgressManager to execute the task
     doAnswer(invocation -> {
         Task.Backgroundable task = invocation.getArgument(0);
@@ -110,9 +136,8 @@ class CheckVulnerabilitiesActionTest {
     action.actionPerformed(event);
 
     // Assert
-    verify(toolWindow).show();
     verify(scannerService).scanDependencies();
-    // Verify notification was sent (either success or warning, depending on callback execution which is empty here)
+    // Verify notification was sent
     notificationsBusMock.verify(() -> Notifications.Bus.notify(any(Notification.class), eq(project)));
   }
 }
