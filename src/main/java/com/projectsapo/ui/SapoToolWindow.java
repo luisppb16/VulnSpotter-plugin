@@ -38,6 +38,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.Vector;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -188,15 +189,20 @@ public class SapoToolWindow {
                     .invokeLater(
                         () -> {
                           scanResults.addAll(results);
+                          @SuppressWarnings("unchecked")
+                          Vector<Vector<Object>> dataVector = (Vector) tableModel.getDataVector();
+                          int firstRow = dataVector.size();
                           for (VulnerabilityScannerService.ScanResult result : results) {
                             String highestSev = getHighestSeverity(result.vulnerabilities());
-                            tableModel.addRow(
-                                new Object[] {
-                                  getSeverityIcon(highestSev),
-                                  result.pkg().name(),
-                                  result.pkg().version(),
-                                  result.vulnerabilities().size()
-                                });
+                            Vector<Object> row = new Vector<>(4);
+                            row.add(getSeverityIcon(highestSev));
+                            row.add(result.pkg().name());
+                            row.add(result.pkg().version());
+                            row.add(result.vulnerabilities().size());
+                            dataVector.add(row);
+                          }
+                          if (!results.isEmpty()) {
+                            tableModel.fireTableRowsInserted(firstRow, dataVector.size() - 1);
                           }
                           scanButton.setEnabled(true);
                           statusLabel.setText("Scan complete (" + results.size() + ")");
