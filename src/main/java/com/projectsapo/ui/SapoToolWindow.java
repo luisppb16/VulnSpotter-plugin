@@ -64,6 +64,10 @@ public class SapoToolWindow {
   private static final String SAFE = "SAFE";
   private static final String DIV_CLOSE = "</div>";
 
+  private static final Pattern FIXED_VERSION_PATTERN =
+      Pattern.compile(
+          "Fixed(?:<[^>]+>|\\s){1,100}(\\d+\\.\\d+(?:\\.\\d+)?)", Pattern.CASE_INSENSITIVE);
+
   private static final JBColor COLOR_CRITICAL = new JBColor(0xB71C1C, 0xB71C1C);
   private static final JBColor COLOR_HIGH = new JBColor(0xE65100, 0xE65100);
   private static final JBColor COLOR_MEDIUM = new JBColor(0xF57F17, 0xF57F17);
@@ -461,11 +465,7 @@ public class SapoToolWindow {
                 // Regex to find "Fixed" followed by a version number in the HTML
                 // Matches "Fixed" followed by tags/spaces and then a version number
                 // Simplified regex to avoid stack overflow warning
-                Pattern p =
-                    Pattern.compile(
-                        "Fixed(?:<[^>]+>|\\s){1,100}(\\d+\\.\\d+(?:\\.\\d+)?)",
-                        Pattern.CASE_INSENSITIVE);
-                Matcher m = p.matcher(html);
+                Matcher m = FIXED_VERSION_PATTERN.matcher(html);
                 if (m.find()) {
                   String ver = m.group(1);
                   scrapedVersions.put(vulnId, ver);
