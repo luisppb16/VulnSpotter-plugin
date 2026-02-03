@@ -312,6 +312,15 @@ public final class SapoToolWindow {
                             row.add(fixedVer);
                             row.add(result.vulnerabilities().size());
                             dataVector.add(row);
+
+                            // Trigger scraping for unknown versions immediately
+                            if (result.vulnerable() && UNKNOWN.equals(fixedVer)) {
+                              for (OsvVulnerability vuln : result.vulnerabilities()) {
+                                if (UNKNOWN.equals(findFixedVersion(vuln, result.pkg().name()))) {
+                                  scrapeFixedVersion(vuln.id(), result);
+                                }
+                              }
+                            }
                           }
                           if (!results.isEmpty()) {
                             tableModel.fireTableRowsInserted(firstRow, dataVector.size() - 1);
@@ -340,6 +349,9 @@ public final class SapoToolWindow {
     Set<String> fixedVersions = new HashSet<>();
     for (OsvVulnerability vuln : result.vulnerabilities()) {
       String f = findFixedVersion(vuln, result.pkg().name());
+      if (UNKNOWN.equals(f) && scrapedVersions.containsKey(vuln.id())) {
+        f = scrapedVersions.get(vuln.id());
+      }
       if (!UNKNOWN.equals(f)) {
         fixedVersions.add(f);
       }
@@ -610,10 +622,19 @@ public final class SapoToolWindow {
                   String ver = m.group(1);
                   scrapedVersions.put(vulnId, ver);
 
-                  // Refresh UI if the currently selected item is still the same
+                  // Refresh UI
                   ApplicationManager.getApplication()
                       .invokeLater(
                           () -> {
+                            // Update table row
+                            for (int i = 0; i < scanResults.size(); i++) {
+                              if (scanResults.get(i).equals(result)) {
+                                tableModel.setValueAt(getAggregateFixedVersion(result), i, 3);
+                                break;
+                              }
+                            }
+
+                            // Refresh details if the currently selected item is still the same
                             int selectedRow = resultsTable.getSelectedRow();
                             if (selectedRow >= 0) {
                               int modelRow = resultsTable.convertRowIndexToModel(selectedRow);
