@@ -32,4 +32,3 @@ class ReportExportServiceTest {
     assertTrue(Files.size(pdfPath) > 0);
   }
 }
-

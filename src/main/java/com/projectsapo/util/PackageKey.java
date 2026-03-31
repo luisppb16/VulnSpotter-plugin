@@ -10,11 +10,11 @@ import java.util.Objects;
 /**
  * Key used for grouping packages to avoid expensive string concatenation.
  *
- * <p>Using a Record as a key is significantly faster (approx. 60-70%) than concatenating name, version, and ecosystem into a String,
- * especially for large dependency sets.
+ * <p>Using a Record as a key is significantly faster (approx. 60-70%) than concatenating name,
+ * version, and ecosystem into a String, especially for large dependency sets.
  *
- * @param name      The package name
- * @param version   The package version
+ * @param name The package name
+ * @param version The package version
  * @param ecosystem The package ecosystem (e.g., Maven)
  */
 public record PackageKey(String name, String version, String ecosystem) {

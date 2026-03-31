@@ -6,7 +6,6 @@
 package com.projectsapo.action;
 
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.*;
 
 import com.intellij.notification.Notification;
@@ -24,7 +23,6 @@ import com.projectsapo.service.VulnerabilityScannerService;
 import com.projectsapo.ui.SapoToolWindow;
 import com.projectsapo.ui.SapoToolWindowFactory;
 import java.util.concurrent.CompletableFuture;
-import java.util.function.Consumer;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -70,31 +68,42 @@ class CheckVulnerabilitiesActionTest {
     action = new CheckVulnerabilitiesAction();
 
     when(event.getProject()).thenReturn(project);
-    
-    toolWindowManagerMock.when(() -> ToolWindowManager.getInstance(project)).thenReturn(toolWindowManager);
+
+    toolWindowManagerMock
+        .when(() -> ToolWindowManager.getInstance(project))
+        .thenReturn(toolWindowManager);
     when(toolWindowManager.getToolWindow("Project Sapo")).thenReturn(toolWindow);
     when(toolWindow.getContentManager()).thenReturn(contentManager);
     when(contentManager.getContent(0)).thenReturn(content);
-    when(content.getUserData(SapoToolWindowFactory.SAPO_TOOL_WINDOW_KEY)).thenReturn(sapoToolWindow);
+    when(content.getUserData(SapoToolWindowFactory.SAPO_TOOL_WINDOW_KEY))
+        .thenReturn(sapoToolWindow);
 
-    doAnswer(invocation -> {
-        Runnable r = invocation.getArgument(0);
-        if (r != null) r.run();
-        return null;
-    }).when(toolWindow).show(any(Runnable.class));
-    
+    doAnswer(
+            invocation -> {
+              Runnable r = invocation.getArgument(0);
+              if (r != null) r.run();
+              return null;
+            })
+        .when(toolWindow)
+        .show(any(Runnable.class));
+
     progressManagerMock.when(ProgressManager::getInstance).thenReturn(progressManager);
-    
-    scannerServiceMock.when(() -> VulnerabilityScannerService.getInstance(project)).thenReturn(scannerService);
-    
+
+    scannerServiceMock
+        .when(() -> VulnerabilityScannerService.getInstance(project))
+        .thenReturn(scannerService);
+
     applicationManagerMock.when(ApplicationManager::getApplication).thenReturn(application);
-    
+
     // Mock invokeLater to run immediately
-    doAnswer(invocation -> {
-        Runnable r = invocation.getArgument(0);
-        r.run();
-        return null;
-    }).when(application).invokeLater(any(Runnable.class));
+    doAnswer(
+            invocation -> {
+              Runnable r = invocation.getArgument(0);
+              r.run();
+              return null;
+            })
+        .when(application)
+        .invokeLater(any(Runnable.class));
   }
 
   @AfterEach
@@ -122,11 +131,14 @@ class CheckVulnerabilitiesActionTest {
     when(toolWindowManager.getToolWindow("Project Sapo")).thenReturn(null);
 
     // Mock the ProgressManager to execute the task
-    doAnswer(invocation -> {
-        Task.Backgroundable task = invocation.getArgument(0);
-        task.run(mock(com.intellij.openapi.progress.ProgressIndicator.class));
-        return null;
-    }).when(progressManager).run(any(Task.Backgroundable.class));
+    doAnswer(
+            invocation -> {
+              Task.Backgroundable task = invocation.getArgument(0);
+              task.run(mock(com.intellij.openapi.progress.ProgressIndicator.class));
+              return null;
+            })
+        .when(progressManager)
+        .run(any(Task.Backgroundable.class));
 
     // Mock the scanner service to complete immediately
     when(scannerService.scanDependencies())
@@ -138,6 +150,7 @@ class CheckVulnerabilitiesActionTest {
     // Assert
     verify(scannerService).scanDependencies();
     // Verify notification was sent
-    notificationsBusMock.verify(() -> Notifications.Bus.notify(any(Notification.class), eq(project)));
+    notificationsBusMock.verify(
+        () -> Notifications.Bus.notify(any(Notification.class), eq(project)));
   }
 }

@@ -7,17 +7,15 @@ package com.projectsapo.util;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
-import com.intellij.openapi.externalSystem.model.ProjectSystemId;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.mockStatic;
 import static org.mockito.Mockito.when;
 
 import com.intellij.openapi.externalSystem.model.DataNode;
 import com.intellij.openapi.externalSystem.model.ExternalProjectInfo;
-import com.intellij.openapi.externalSystem.model.Key;
 import com.intellij.openapi.externalSystem.model.ProjectKeys;
+import com.intellij.openapi.externalSystem.model.ProjectSystemId;
 import com.intellij.openapi.externalSystem.model.project.LibraryData;
 import com.intellij.openapi.externalSystem.model.project.ProjectData;
 import com.intellij.openapi.externalSystem.service.project.ProjectDataManager;
@@ -25,7 +23,6 @@ import com.intellij.openapi.externalSystem.util.ExternalSystemApiUtil;
 import com.intellij.openapi.module.Module;
 import com.intellij.openapi.module.ModuleManager;
 import com.intellij.openapi.project.Project;
-import com.intellij.openapi.roots.OrderEnumerator;
 import com.intellij.openapi.roots.OrderRootType;
 import com.intellij.openapi.roots.libraries.Library;
 import com.intellij.openapi.roots.libraries.LibraryTable;
@@ -76,10 +73,14 @@ class DependencyParserTest {
     libraryRegistrarStatic = mockStatic(LibraryTablesRegistrar.class);
     externalSystemStatic = mockStatic(ExternalSystemApiUtil.class);
 
-    mavenStatic.when(() -> MavenProjectsManager.getInstance(project)).thenReturn(mavenProjectsManager);
+    mavenStatic
+        .when(() -> MavenProjectsManager.getInstance(project))
+        .thenReturn(mavenProjectsManager);
     projectDataStatic.when(ProjectDataManager::getInstance).thenReturn(projectDataManager);
     moduleManagerStatic.when(() -> ModuleManager.getInstance(project)).thenReturn(moduleManager);
-    libraryRegistrarStatic.when(LibraryTablesRegistrar::getInstance).thenReturn(libraryTablesRegistrar);
+    libraryRegistrarStatic
+        .when(LibraryTablesRegistrar::getInstance)
+        .thenReturn(libraryTablesRegistrar);
   }
 
   @AfterEach
@@ -148,7 +149,8 @@ class DependencyParserTest {
       when(libData.getVersion()).thenReturn("2.0.0");
       when(libNode.getData()).thenReturn(libData);
 
-      externalSystemStatic.when(() -> ExternalSystemApiUtil.findAll(eq(projectNode), eq(ProjectKeys.LIBRARY)))
+      externalSystemStatic
+          .when(() -> ExternalSystemApiUtil.findAll(eq(projectNode), eq(ProjectKeys.LIBRARY)))
           .thenReturn(List.of(libNode));
 
       // When
@@ -170,14 +172,16 @@ class DependencyParserTest {
     void shouldUseFallback() {
       // Given
       when(mavenProjectsManager.hasProjects()).thenReturn(false);
-      when(projectDataManager.getExternalProjectsData(any(), any(ProjectSystemId.class))).thenReturn(Collections.emptyList());
+      when(projectDataManager.getExternalProjectsData(any(), any(ProjectSystemId.class)))
+          .thenReturn(Collections.emptyList());
 
-      when(moduleManager.getModules()).thenReturn(new Module[0]); // No modules to simplify order enumerator mocking
+      when(moduleManager.getModules())
+          .thenReturn(new Module[0]); // No modules to simplify order enumerator mocking
       when(libraryTablesRegistrar.getLibraryTable(project)).thenReturn(libraryTable);
 
       Library library = mock(Library.class);
       when(library.getName()).thenReturn("Maven: com.fallback:lib:3.0.0");
-      when(libraryTable.getLibraries()).thenReturn(new Library[]{library});
+      when(libraryTable.getLibraries()).thenReturn(new Library[] {library});
 
       // When
       List<OsvPackage> results = DependencyParser.parseDependencies(project);
@@ -191,12 +195,13 @@ class DependencyParserTest {
     @Test
     @DisplayName("should_parse_jar_filename_correctly")
     void shouldParseJarFilename() {
-       // Given
+      // Given
       when(mavenProjectsManager.hasProjects()).thenReturn(false);
-      when(projectDataManager.getExternalProjectsData(any(), any(ProjectSystemId.class))).thenReturn(Collections.emptyList());
+      when(projectDataManager.getExternalProjectsData(any(), any(ProjectSystemId.class)))
+          .thenReturn(Collections.emptyList());
       when(moduleManager.getModules()).thenReturn(new Module[0]);
       when(libraryTablesRegistrar.getLibraryTable(project)).thenReturn(libraryTable);
-      
+
       Library library = mock(Library.class);
       when(library.getName()).thenReturn("InvalidName"); // Force file fallback
       when(library.getName()).thenReturn("InvalidName"); // Force file fallback
@@ -204,9 +209,9 @@ class DependencyParserTest {
       VirtualFile file = mock(VirtualFile.class);
       when(file.getName()).thenReturn("commons-lang3-3.12.0.jar");
       when(file.getPath()).thenReturn("/path/to/commons-lang3-3.12.0.jar");
-      when(library.getFiles(OrderRootType.CLASSES)).thenReturn(new VirtualFile[]{file});
+      when(library.getFiles(OrderRootType.CLASSES)).thenReturn(new VirtualFile[] {file});
 
-      when(libraryTable.getLibraries()).thenReturn(new Library[]{library});
+      when(libraryTable.getLibraries()).thenReturn(new Library[] {library});
 
       // When
       List<OsvPackage> results = DependencyParser.parseDependencies(project);
@@ -220,9 +225,10 @@ class DependencyParserTest {
     @Test
     @DisplayName("should_parse_gradle_cache_path_correctly")
     void shouldParseGradleCachePath() {
-       // Given
+      // Given
       when(mavenProjectsManager.hasProjects()).thenReturn(false);
-      when(projectDataManager.getExternalProjectsData(any(), any(ProjectSystemId.class))).thenReturn(Collections.emptyList());
+      when(projectDataManager.getExternalProjectsData(any(), any(ProjectSystemId.class)))
+          .thenReturn(Collections.emptyList());
       when(moduleManager.getModules()).thenReturn(new Module[0]);
       when(libraryTablesRegistrar.getLibraryTable(project)).thenReturn(libraryTable);
 
@@ -230,11 +236,13 @@ class DependencyParserTest {
       when(library.getName()).thenReturn("InvalidName"); // Force file fallback
 
       VirtualFile file = mock(VirtualFile.class);
-      when(file.getPath()).thenReturn("/home/user/.gradle/caches/modules-2/files-2.1/com.google.guava/guava/30.1-jre/HASH/guava-30.1-jre.jar");
+      when(file.getPath())
+          .thenReturn(
+              "/home/user/.gradle/caches/modules-2/files-2.1/com.google.guava/guava/30.1-jre/HASH/guava-30.1-jre.jar");
       when(file.getName()).thenReturn("guava-30.1-jre.jar");
-      when(library.getFiles(OrderRootType.CLASSES)).thenReturn(new VirtualFile[]{file});
+      when(library.getFiles(OrderRootType.CLASSES)).thenReturn(new VirtualFile[] {file});
 
-      when(libraryTable.getLibraries()).thenReturn(new Library[]{library});
+      when(libraryTable.getLibraries()).thenReturn(new Library[] {library});
 
       // When
       List<OsvPackage> results = DependencyParser.parseDependencies(project);

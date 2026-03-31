@@ -39,6 +39,13 @@
     <depends>com.intellij.gradle</depends>
 
     <extensions defaultExtensionNs="com.intellij">
+        <applicationService serviceImplementation="com.projectsapo.settings.ProjectSapoSettings"/>
+
+        <externalSystemTaskNotificationListener
+                implementation="com.projectsapo.sync.ProjectSyncListener"/>
+
+        <annotator language="XML" implementationClass="com.projectsapo.annotator.DependencyAnnotator"/>
+
         <toolWindow id="Project Sapo"
                     secondary="false"
                     icon="/icons/pluginIcon.svg"

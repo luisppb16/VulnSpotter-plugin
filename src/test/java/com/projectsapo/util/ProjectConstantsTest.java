@@ -27,7 +27,7 @@ class ProjectConstantsTest {
       constructor.newInstance();
       fail("Expected InvocationTargetException");
     } catch (InvocationTargetException e) {
-      assertTrue(e.getCause() instanceof UnsupportedOperationException);
+      assertInstanceOf(UnsupportedOperationException.class, e.getCause());
     } catch (InstantiationException | IllegalAccessException e) {
       fail("Unexpected exception: " + e);
     }

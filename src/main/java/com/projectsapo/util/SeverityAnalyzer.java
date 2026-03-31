@@ -10,7 +10,6 @@ import java.text.NumberFormat;
 import java.text.ParseException;
 import java.util.List;
 import java.util.Locale;
-import java.util.Objects;
 
 /** Shared logic for determining vulnerability severity from OSV data. */
 public final class SeverityAnalyzer {
@@ -19,18 +18,13 @@ public final class SeverityAnalyzer {
   private static final String HIGH = "HIGH";
   private static final String MEDIUM = "MEDIUM";
   private static final String LOW = "LOW";
-
-  private record SeverityScore(double score, String source) {}
-
   private final NumberFormat numberFormat;
 
   public SeverityAnalyzer() {
     this.numberFormat = NumberFormat.getInstance(Locale.ROOT);
   }
 
-  /**
-   * Determine severity of a vulnerability, checking database_specific first, then CVSS.
-   */
+  /** Determine severity of a vulnerability, checking database_specific first, then CVSS. */
   public String getSeverity(OsvVulnerability vulnerability) {
     String dbSeverity = getSeverityFromDatabaseSpecific(vulnerability);
     if (dbSeverity != null) {
@@ -39,9 +33,7 @@ public final class SeverityAnalyzer {
     return getSeverityFromCvss(vulnerability);
   }
 
-  /**
-   * Extract severity from database_specific field (if present).
-   */
+  /** Extract severity from database_specific field (if present). */
   private String getSeverityFromDatabaseSpecific(OsvVulnerability vulnerability) {
     if (vulnerability.databaseSpecific() != null) {
       Object severity = vulnerability.databaseSpecific().get("severity");
@@ -52,9 +44,7 @@ public final class SeverityAnalyzer {
     return null;
   }
 
-  /**
-   * Extract severity from CVSS score (V2 or V3).
-   */
+  /** Extract severity from CVSS score (V2 or V3). */
   private String getSeverityFromCvss(OsvVulnerability vulnerability) {
     if (vulnerability.severity() == null) {
       return MEDIUM;
@@ -79,9 +69,7 @@ public final class SeverityAnalyzer {
     }
   }
 
-  /**
-   * Map CVSS score to severity level.
-   */
+  /** Map CVSS score to severity level. */
   private String getSeverityLevel(double score) {
     if (score >= 9.0) return CRITICAL;
     if (score >= 7.0) return HIGH;
@@ -89,9 +77,7 @@ public final class SeverityAnalyzer {
     return LOW;
   }
 
-  /**
-   * Normalize raw severity string to standard levels.
-   */
+  /** Normalize raw severity string to standard levels. */
   private String normalizeSeverity(String rawSeverity) {
     String severity = rawSeverity.toUpperCase(Locale.ROOT);
     return switch (severity) {
@@ -103,17 +89,16 @@ public final class SeverityAnalyzer {
     };
   }
 
-  /**
-   * Get highest severity from a list of vulnerabilities.
-   */
+  /** Get highest severity from a list of vulnerabilities. */
   public String getHighestSeverity(List<OsvVulnerability> vulnerabilities) {
-    int maxLevel = (vulnerabilities == null || vulnerabilities.isEmpty())
-        ? 0
-        : vulnerabilities.stream()
-            .map(this::getSeverity)
-            .mapToInt(this::severityToLevel)
-            .max()
-            .orElse(0);
+    int maxLevel =
+        (vulnerabilities == null || vulnerabilities.isEmpty())
+            ? 0
+            : vulnerabilities.stream()
+                .map(this::getSeverity)
+                .mapToInt(this::severityToLevel)
+                .max()
+                .orElse(0);
     return levelToSeverity(maxLevel);
   }
 
@@ -138,5 +123,6 @@ public final class SeverityAnalyzer {
       default -> "SAFE";
     };
   }
-}
 
+  private record SeverityScore(double score, String source) {}
+}

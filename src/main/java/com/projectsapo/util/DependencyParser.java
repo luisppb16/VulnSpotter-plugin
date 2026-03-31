@@ -5,6 +5,8 @@
 
 package com.projectsapo.util;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.externalSystem.model.DataNode;
 import com.intellij.openapi.externalSystem.model.ExternalProjectInfo;
@@ -24,6 +26,10 @@ import com.intellij.openapi.roots.libraries.LibraryTable;
 import com.intellij.openapi.roots.libraries.LibraryTablesRegistrar;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.projectsapo.model.OsvPackage;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Comparator;
@@ -49,8 +55,10 @@ public final class DependencyParser {
   private static final Logger LOG = Logger.getInstance(DependencyParser.class);
   private static final Pattern JAR_VERSION_PATTERN = Pattern.compile("^(.+?)-(\\d[\\w.-]*)$");
   // Matches Gradle cache path: .../modules-2/files-2.1/group/artifact/version/...
-  private static final Pattern GRADLE_CACHE_PATTERN = Pattern.compile(".*/modules-2/files-2\\.1/([^/]+)/([^/]+)/([^/]+)/.*");
+  private static final Pattern GRADLE_CACHE_PATTERN =
+      Pattern.compile(".*/modules-2/files-2\\.1/([^/]+)/([^/]+)/([^/]+)/.*");
   private static final String MAVEN_ECOSYSTEM = "Maven";
+  private static final ObjectMapper MAPPER = new ObjectMapper();
 
   private DependencyParser() {
     throw new UnsupportedOperationException("Utility class");
@@ -74,7 +82,8 @@ public final class DependencyParser {
     // 2. Gradle: External System support
     try {
       Collection<ExternalProjectInfo> gradleProjects =
-          ProjectDataManager.getInstance().getExternalProjectsData(project, GradleConstants.SYSTEM_ID);
+          ProjectDataManager.getInstance()
+              .getExternalProjectsData(project, GradleConstants.SYSTEM_ID);
       if (!gradleProjects.isEmpty()) {
         allPackages.addAll(parseGradleDependencies(gradleProjects));
         isManagedProject = true;
@@ -111,7 +120,8 @@ public final class DependencyParser {
 
     // 4. Fallback: Project Libraries - Always run
     try {
-      LibraryTable projectLibraryTable = LibraryTablesRegistrar.getInstance().getLibraryTable(project);
+      LibraryTable projectLibraryTable =
+          LibraryTablesRegistrar.getInstance().getLibraryTable(project);
       for (Library library : projectLibraryTable.getLibraries()) {
         OsvPackage pkg = parseLibrary(library);
         if (pkg != null) {
@@ -122,7 +132,95 @@ public final class DependencyParser {
       LOG.warn("Failed to parse project libraries", e);
     }
 
+    // 5. Node.js (package.json)
+    try {
+      parsePackageJson(project, allPackages);
+    } catch (Exception e) {
+      LOG.warn("Failed to parse package.json", e);
+    }
+
+    // 6. Python (requirements.txt)
+    try {
+      parseRequirementsTxt(project, allPackages);
+    } catch (Exception e) {
+      LOG.warn("Failed to parse requirements.txt", e);
+    }
+
+    // 7. Go (go.mod)
+    try {
+      parseGoMod(project, allPackages);
+    } catch (Exception e) {
+      LOG.warn("Failed to parse go.mod", e);
+    }
+
     return deduplicateAndSort(allPackages);
+  }
+
+  private static void parsePackageJson(Project project, List<OsvPackage> allPackages)
+      throws IOException {
+    String basePath = project.getBasePath();
+    if (basePath == null) return;
+    Path pkgJsonPath = Paths.get(basePath, "package.json");
+    if (!Files.exists(pkgJsonPath)) return;
+
+    JsonNode node = MAPPER.readTree(pkgJsonPath.toFile());
+    processJsonDependencies(node, "dependencies", allPackages);
+    processJsonDependencies(node, "devDependencies", allPackages);
+  }
+
+  private static void processJsonDependencies(
+      JsonNode root, String fieldName, List<OsvPackage> allPackages) {
+    if (root.has(fieldName)) {
+      JsonNode deps = root.get(fieldName);
+      deps.fieldNames()
+          .forEachRemaining(
+              name -> {
+                String version = deps.get(name).asText().replaceAll("[^0-9.]", "");
+                if (!version.isEmpty()) {
+                  allPackages.add(new OsvPackage(name, "npm", version));
+                }
+              });
+    }
+  }
+
+  private static void parseRequirementsTxt(Project project, List<OsvPackage> allPackages)
+      throws IOException {
+    String basePath = project.getBasePath();
+    if (basePath == null) return;
+    Path reqTxtPath = Paths.get(basePath, "requirements.txt");
+    if (!Files.exists(reqTxtPath)) return;
+
+    List<String> lines = Files.readAllLines(reqTxtPath);
+    for (String line : lines) {
+      if (line.contains("==")) {
+        String[] parts = line.split("==");
+        if (parts.length == 2) {
+          allPackages.add(new OsvPackage(parts[0].trim(), "PyPI", parts[1].trim()));
+        }
+      }
+    }
+  }
+
+  private static void parseGoMod(Project project, List<OsvPackage> allPackages) throws IOException {
+    String basePath = project.getBasePath();
+    if (basePath == null) return;
+    Path goModPath = Paths.get(basePath, "go.mod");
+    if (!Files.exists(goModPath)) return;
+
+    List<String> lines = Files.readAllLines(goModPath);
+    for (String line : lines) {
+      line = line.trim();
+      if (!line.startsWith("module ")
+          && !line.startsWith("require (")
+          && !line.equals(")")
+          && !line.isEmpty()) {
+        String[] parts = line.split("\\s+");
+        if (parts.length >= 2) {
+          String version = parts[1].replace("v", "");
+          allPackages.add(new OsvPackage(parts[0], "Go", version));
+        }
+      }
+    }
   }
 
   private static List<OsvPackage> deduplicateAndSort(List<OsvPackage> allPackages) {
@@ -171,7 +269,8 @@ public final class DependencyParser {
     List<String> currentChain = new ArrayList<>(parentChain);
     currentChain.add(fullName);
 
-    result.add(new OsvPackage(fullName, MAVEN_ECOSYSTEM, artifact.getVersion(), Set.of(currentChain)));
+    result.add(
+        new OsvPackage(fullName, MAVEN_ECOSYSTEM, artifact.getVersion(), Set.of(currentChain)));
 
     for (MavenArtifactNode child : node.getDependencies()) {
       collectMavenDependencies(child, currentChain, result);
@@ -187,13 +286,15 @@ public final class DependencyParser {
       if (projectNode == null) continue;
 
       // Check for libraries at project level
-      processLibraryNodes(ExternalSystemApiUtil.findAll(projectNode, ProjectKeys.LIBRARY), dependencies);
+      processLibraryNodes(
+          ExternalSystemApiUtil.findAll(projectNode, ProjectKeys.LIBRARY), dependencies);
 
       // Check for libraries at module level
       Collection<DataNode<ModuleData>> moduleNodes =
           ExternalSystemApiUtil.findAll(projectNode, ProjectKeys.MODULE);
       for (DataNode<ModuleData> moduleNode : moduleNodes) {
-        processLibraryNodes(ExternalSystemApiUtil.findAll(moduleNode, ProjectKeys.LIBRARY), dependencies);
+        processLibraryNodes(
+            ExternalSystemApiUtil.findAll(moduleNode, ProjectKeys.LIBRARY), dependencies);
       }
     }
     return dependencies;
@@ -264,7 +365,11 @@ public final class DependencyParser {
         String group = cacheMatcher.group(1);
         String artifact = cacheMatcher.group(2);
         String version = cacheMatcher.group(3);
-        return new OsvPackage(group + ":" + artifact, MAVEN_ECOSYSTEM, version, Set.of(List.of(group + ":" + artifact)));
+        return new OsvPackage(
+            group + ":" + artifact,
+            MAVEN_ECOSYSTEM,
+            version,
+            Set.of(List.of(group + ":" + artifact)));
       }
 
       String filename = file.getName();

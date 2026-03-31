@@ -13,7 +13,6 @@ import static org.mockito.Mockito.when;
 
 import com.intellij.openapi.application.Application;
 import com.intellij.openapi.application.ApplicationManager;
-import com.intellij.openapi.externalSystem.model.ExternalProjectInfo;
 import com.intellij.openapi.externalSystem.service.project.ProjectDataManager;
 import com.intellij.openapi.module.Module;
 import com.intellij.openapi.module.ModuleManager;
@@ -73,9 +72,7 @@ class DependencyParserBenchmarkTest {
     mavenProjectsManagerMock
         .when(() -> MavenProjectsManager.getInstance(project))
         .thenReturn(mavenProjectsManager);
-    projectDataManagerMock
-        .when(ProjectDataManager::getInstance)
-        .thenReturn(projectDataManager);
+    projectDataManagerMock.when(ProjectDataManager::getInstance).thenReturn(projectDataManager);
     orderEnumeratorMock
         .when(() -> OrderEnumerator.orderEntries(any(Module.class)))
         .thenReturn(orderEnumerator);
@@ -84,9 +81,11 @@ class DependencyParserBenchmarkTest {
         .thenReturn(orderEnumerator);
     applicationManagerMock.when(ApplicationManager::getApplication).thenReturn(application);
     moduleManagerMock.when(() -> ModuleManager.getInstance(project)).thenReturn(moduleManager);
-    libraryTablesRegistrarMock.when(LibraryTablesRegistrar::getInstance).thenReturn(libraryTablesRegistrar);
+    libraryTablesRegistrarMock
+        .when(LibraryTablesRegistrar::getInstance)
+        .thenReturn(libraryTablesRegistrar);
 
-    when(moduleManager.getModules()).thenReturn(new Module[]{module});
+    when(moduleManager.getModules()).thenReturn(new Module[] {module});
     when(libraryTablesRegistrar.getLibraryTable(project)).thenReturn(libraryTable);
     when(libraryTable.getLibraries()).thenReturn(new Library[0]);
 
@@ -116,14 +115,14 @@ class DependencyParserBenchmarkTest {
 
     List<MavenArtifactNode> mavenNodes = new ArrayList<>(depCount);
     for (int i = 0; i < depCount; i++) {
-        MavenArtifactNode node = mock(MavenArtifactNode.class);
-        MavenArtifact artifact = mock(MavenArtifact.class);
-        when(node.getArtifact()).thenReturn(artifact);
-        when(artifact.getGroupId()).thenReturn("com.example");
-        when(artifact.getArtifactId()).thenReturn("lib-" + i);
-        when(artifact.getVersion()).thenReturn("1.0.0");
-        when(node.getDependencies()).thenReturn(new ArrayList<>());
-        mavenNodes.add(node);
+      MavenArtifactNode node = mock(MavenArtifactNode.class);
+      MavenArtifact artifact = mock(MavenArtifact.class);
+      when(node.getArtifact()).thenReturn(artifact);
+      when(artifact.getGroupId()).thenReturn("com.example");
+      when(artifact.getArtifactId()).thenReturn("lib-" + i);
+      when(artifact.getVersion()).thenReturn("1.0.0");
+      when(node.getDependencies()).thenReturn(new ArrayList<>());
+      mavenNodes.add(node);
     }
     when(mavenProject.getDependencyTree()).thenReturn(mavenNodes);
 
@@ -133,29 +132,32 @@ class DependencyParserBenchmarkTest {
 
     // 3. Setup OrderEnumerator (Same 5000 libraries)
     // We mock forEachLibrary to simulate iteration over libraries
-    doAnswer(invocation -> {
-        Processor<Library> processor = invocation.getArgument(0);
-        for (int i = 0; i < depCount; i++) {
-             Library library = mock(Library.class);
-             when(library.getName()).thenReturn("Maven: com.example:lib-" + i + ":1.0.0");
-             processor.process(library);
-        }
-        return null;
-    }).when(orderEnumerator).forEachLibrary(any());
+    doAnswer(
+            invocation -> {
+              Processor<Library> processor = invocation.getArgument(0);
+              for (int i = 0; i < depCount; i++) {
+                Library library = mock(Library.class);
+                when(library.getName()).thenReturn("Maven: com.example:lib-" + i + ":1.0.0");
+                processor.process(library);
+              }
+              return null;
+            })
+        .when(orderEnumerator)
+        .forEachLibrary(any());
 
     // Warmup
     for (int i = 0; i < 5; i++) {
-        DependencyParser.parseDependencies(project);
+      DependencyParser.parseDependencies(project);
     }
 
     // Measure
     long startTime = System.nanoTime();
     int iterations = 10;
     for (int i = 0; i < iterations; i++) {
-        List<OsvPackage> result = DependencyParser.parseDependencies(project);
-        if (result.size() != depCount) {
-            throw new RuntimeException("Unexpected result size: " + result.size());
-        }
+      List<OsvPackage> result = DependencyParser.parseDependencies(project);
+      if (result.size() != depCount) {
+        throw new RuntimeException("Unexpected result size: " + result.size());
+      }
     }
     long endTime = System.nanoTime();
 

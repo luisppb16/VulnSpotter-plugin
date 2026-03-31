@@ -75,22 +75,16 @@ public final class SapoToolWindow {
   private static final String LOW = "LOW";
   private static final String SAFE = "SAFE";
   private static final String DIV_CLOSE = "</div>";
-
-  private record HtmlTheme(String bgColor, String textColor, String cardBg, String borderColor) {}
-
-  private record ScrapingTask(String vulnId, VulnerabilityScannerService.ScanResult result) {}
-
-  private record TableRowData(Icon icon, String name, String version, String fixedIn, int vulnCount) {}
-
   private static final Pattern FIXED_VERSION_PATTERN =
       Pattern.compile(
           "Fixed(?:<[^>]+>|\\s){1,100}(\\d+\\.\\d+(?:\\.\\d+)?)", Pattern.CASE_INSENSITIVE);
-
   private static final JBColor COLOR_CRITICAL = new JBColor(0xB71C1C, 0xB71C1C);
   private static final JBColor COLOR_HIGH = new JBColor(0xE65100, 0xE65100);
   private static final JBColor COLOR_MEDIUM = new JBColor(0xF57F17, 0xF57F17);
   private static final JBColor COLOR_LOW = new JBColor(0x33691E, 0x33691E);
-
+  private static final long EXPORT_WAIT_TIMEOUT_MS = 8000;
+  private static final int SCRAPE_CONNECT_TIMEOUT_MS = 4000;
+  private static final int SCRAPE_READ_TIMEOUT_MS = 6000;
   private final JPanel content;
   private final CardLayout cardLayout = new CardLayout();
   private final JPanel mainPanel;
@@ -101,6 +95,7 @@ public final class SapoToolWindow {
   private final JButton scanButton;
   private final JButton exportHtmlButton;
   private final JButton exportPdfButton;
+  private final JButton exportCsvButton;
   private final JLabel statusLabel;
   private final SearchTextField searchField;
   private final JBCheckBox vulnerableOnlyCheckbox;
@@ -113,10 +108,6 @@ public final class SapoToolWindow {
   private final Set<String> scrapingInProgress =
       Collections.newSetFromMap(new ConcurrentHashMap<>());
   private java.util.concurrent.CountDownLatch scrapingLatch;
-
-  private static final long EXPORT_WAIT_TIMEOUT_MS = 8000;
-  private static final int SCRAPE_CONNECT_TIMEOUT_MS = 4000;
-  private static final int SCRAPE_READ_TIMEOUT_MS = 6000;
 
   public SapoToolWindow(Project project) {
     this.project = project;
@@ -159,13 +150,18 @@ public final class SapoToolWindow {
 
     exportHtmlButton = new JButton("Export HTML");
     exportHtmlButton.setEnabled(false);
-    exportHtmlButton.addActionListener(e -> exportReport(false));
+    exportHtmlButton.addActionListener(e -> exportReport("html"));
     leftActions.add(exportHtmlButton);
 
     exportPdfButton = new JButton("Export PDF");
     exportPdfButton.setEnabled(false);
-    exportPdfButton.addActionListener(e -> exportReport(true));
+    exportPdfButton.addActionListener(e -> exportReport("pdf"));
     leftActions.add(exportPdfButton);
+
+    exportCsvButton = new JButton("Export CSV");
+    exportCsvButton.setEnabled(false);
+    exportCsvButton.addActionListener(e -> exportReport("csv"));
+    leftActions.add(exportCsvButton);
 
     statusLabel = new JLabel("Ready");
     leftActions.add(statusLabel);
@@ -176,7 +172,10 @@ public final class SapoToolWindow {
     progressBar.setPreferredSize(new Dimension(100, 16));
     leftActions.add(progressBar);
 
-    JPanel rightActions = new JPanel(new FlowLayout(FlowLayout.RIGHT, 10, 0));
+    // Removed exportHtmlButton.addActionListener(e -> exportReport(false)) from original logic since we have changed it to format string
+    exportHtmlButton.removeActionListener(exportHtmlButton.getActionListeners()[0]);
+    exportHtmlButton.addActionListener(e -> exportReport("html"));
+
     searchField = new SearchTextField();
     searchField.addDocumentListener(
         new DocumentAdapter() {
@@ -185,12 +184,9 @@ public final class SapoToolWindow {
             applyFilters();
           }
         });
-    searchField.setPreferredSize(new Dimension(200, searchField.getPreferredSize().height));
-
-    rightActions.add(searchField);
+    searchField.setPreferredSize(new Dimension(250, 30));
 
     toolbar.add(leftActions, BorderLayout.WEST);
-    toolbar.add(rightActions, BorderLayout.EAST);
     content.add(toolbar, BorderLayout.NORTH);
 
     Splitter splitter = new Splitter(false, 0.35f);
@@ -244,7 +240,14 @@ public final class SapoToolWindow {
               }
             });
 
-    splitter.setFirstComponent(new JBScrollPane(resultsTable));
+    JPanel leftPanel = new JPanel(new BorderLayout());
+    JPanel searchPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 5));
+    searchPanel.setBorder(JBUI.Borders.empty(0, 5, 5, 0));
+    searchPanel.add(searchField);
+    leftPanel.add(searchPanel, BorderLayout.NORTH);
+    leftPanel.add(new JBScrollPane(resultsTable), BorderLayout.CENTER);
+
+    splitter.setFirstComponent(leftPanel);
     splitter.setSecondComponent(browser.getComponent());
 
     mainPanel = new JPanel(cardLayout);
@@ -333,12 +336,13 @@ public final class SapoToolWindow {
                               result -> {
                                 String highestSev = getHighestSeverity(result.vulnerabilities());
                                 String fixedVer = getAggregateFixedVersion(result);
-                                TableRowData rowData = new TableRowData(
-                                    getSeverityIcon(highestSev),
-                                    result.pkg().name(),
-                                    result.pkg().version(),
-                                    fixedVer,
-                                    result.vulnerabilities().size());
+                                TableRowData rowData =
+                                    new TableRowData(
+                                        getSeverityIcon(highestSev),
+                                        result.pkg().name(),
+                                        result.pkg().version(),
+                                        fixedVer,
+                                        result.vulnerabilities().size());
 
                                 Vector<Object> row = new Vector<>(5);
                                 row.add(rowData.icon());
@@ -381,13 +385,13 @@ public final class SapoToolWindow {
             });
   }
 
-  private void exportReport(boolean asPdf) {
+  private void exportReport(String format) {
     if (scanResults.isEmpty()) {
       statusLabel.setText("No scan data to export");
       return;
     }
 
-    String extension = asPdf ? "pdf" : "html";
+    String extension = format.toLowerCase(Locale.ROOT);
     Path outputPath = chooseOutputPath(extension);
     if (outputPath == null) {
       return;
@@ -402,7 +406,9 @@ public final class SapoToolWindow {
             () -> {
               boolean timedOut;
               try {
-                timedOut = !scrapingLatch.await(EXPORT_WAIT_TIMEOUT_MS, java.util.concurrent.TimeUnit.MILLISECONDS);
+                timedOut =
+                    !scrapingLatch.await(
+                        EXPORT_WAIT_TIMEOUT_MS, java.util.concurrent.TimeUnit.MILLISECONDS);
               } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 timedOut = true;
@@ -413,8 +419,10 @@ public final class SapoToolWindow {
                       project.getName(), List.copyOf(scanResults), new HashMap<>(scrapedVersions));
 
               try {
-                if (asPdf) {
+                if ("pdf".equals(extension)) {
                   ReportExportService.exportPdf(htmlReport, outputPath);
+                } else if ("csv".equals(extension)) {
+                  ReportExportService.exportCsv(List.copyOf(scanResults), outputPath);
                 } else {
                   ReportExportService.exportHtml(htmlReport, outputPath);
                 }
@@ -444,9 +452,12 @@ public final class SapoToolWindow {
     String dateSuffix = LocalDate.now().toString();
     JFileChooser chooser =
         new JFileChooser(
-            project.getBasePath() != null ? project.getBasePath() : System.getProperty("user.home"));
+            project.getBasePath() != null
+                ? project.getBasePath()
+                : System.getProperty("user.home"));
     chooser.setDialogTitle("Export vulnerability report");
-    chooser.setFileFilter(new FileNameExtensionFilter(extension.toUpperCase(Locale.ROOT) + " files", extension));
+    chooser.setFileFilter(
+        new FileNameExtensionFilter(extension.toUpperCase(Locale.ROOT) + " files", extension));
     chooser.setSelectedFile(new File("sapo-vulnerability-report-" + dateSuffix + "." + extension));
 
     int selection = chooser.showSaveDialog(content);
@@ -457,7 +468,8 @@ public final class SapoToolWindow {
     File selectedFile = chooser.getSelectedFile();
     String fileName = selectedFile.getName().toLowerCase(Locale.ROOT);
     if (!fileName.endsWith("." + extension)) {
-      selectedFile = new File(selectedFile.getParentFile(), selectedFile.getName() + "." + extension);
+      selectedFile =
+          new File(selectedFile.getParentFile(), selectedFile.getName() + "." + extension);
     }
     return selectedFile.toPath();
   }
@@ -465,6 +477,7 @@ public final class SapoToolWindow {
   private void setExportButtonsEnabled(boolean enabled) {
     exportHtmlButton.setEnabled(enabled);
     exportPdfButton.setEnabled(enabled);
+    exportCsvButton.setEnabled(enabled);
   }
 
   private String getAggregateFixedVersion(VulnerabilityScannerService.ScanResult result) {
@@ -573,11 +586,12 @@ public final class SapoToolWindow {
       return true;
     }
     return chains.stream()
-        .peek(chain -> {
-          if (chain.size() > 1) {
-            roots.add(chain.getFirst());
-          }
-        })
+        .peek(
+            chain -> {
+              if (chain.size() > 1) {
+                roots.add(chain.getFirst());
+              }
+            })
         .anyMatch(chain -> chain.size() <= 1);
   }
 
@@ -611,7 +625,8 @@ public final class SapoToolWindow {
     if (hasFix) {
       sb.append("<p>For transitive dependencies, upgrade:</p>");
       sb.append("<ul>");
-      roots.forEach(root -> sb.append("<li><code>").append(HtmlEscaper.escape(root)).append("</code></li>"));
+      roots.forEach(
+          root -> sb.append("<li><code>").append(HtmlEscaper.escape(root)).append("</code></li>"));
       sb.append("</ul>");
       sb.append("<p>to a version that uses <b>")
           .append(HtmlEscaper.escape(result.pkg().name()))
@@ -623,7 +638,8 @@ public final class SapoToolWindow {
           .append(HtmlEscaper.escape(result.pkg().name()))
           .append("</b> has no fixed version available.</p>");
       sb.append("<p>Affected roots:</p><ul>");
-      roots.forEach(root -> sb.append("<li><code>").append(HtmlEscaper.escape(root)).append("</code></li>"));
+      roots.forEach(
+          root -> sb.append("<li><code>").append(HtmlEscaper.escape(root)).append("</code></li>"));
       sb.append("</ul>");
     }
   }
@@ -633,62 +649,70 @@ public final class SapoToolWindow {
     sb.append("<div class='section-title'>")
         .append(result.vulnerabilities().size())
         .append(" Vulnerabilities</div>");
-    result.vulnerabilities().forEach(vuln -> {
-      String sev = getSeverity(vuln);
-      String fixedV = findFixedVersion(vuln, result.pkg().name());
-      fixedV =
-          UNKNOWN.equals(fixedV) && scrapedVersions.containsKey(vuln.id())
-              ? scrapedVersions.get(vuln.id())
-              : fixedV;
-      String score = getScore(vuln);
+    result
+        .vulnerabilities()
+        .forEach(
+            vuln -> {
+              String sev = getSeverity(vuln);
+              String fixedV = findFixedVersion(vuln, result.pkg().name());
+              fixedV =
+                  UNKNOWN.equals(fixedV) && scrapedVersions.containsKey(vuln.id())
+                      ? scrapedVersions.get(vuln.id())
+                      : fixedV;
+              String score = getScore(vuln);
 
-      sb.append("<div class='card'>");
-      sb.append("<div class='card-header'>");
-      sb.append("<span class='badge ")
-          .append(HtmlEscaper.escape(sev.toLowerCase(Locale.ROOT)))
-          .append("'>")
-          .append(HtmlEscaper.escape(sev))
-          .append("</span>");
-      if (score != null) {
-        sb.append("<span class='cvss-score'>CVSS ").append(HtmlEscaper.escape(score)).append("</span>");
-      }
-      sb.append("<span class='vuln-id'><a href='https://osv.dev/vulnerability/")
-          .append(HtmlEscaper.escape(vuln.id()))
-          .append("'>")
-          .append(HtmlEscaper.escape(vuln.id()))
-          .append("</a></span>");
-      sb.append(DIV_CLOSE);
-      sb.append("<div class='vuln-summary'>")
-          .append(vuln.summary() != null ? HtmlEscaper.escape(vuln.summary()) : "No summary")
-          .append(DIV_CLOSE);
-      sb.append("<div class='fixed-box'>Fixed in: <span class='fixed-ver'>")
-          .append(HtmlEscaper.escape(fixedV))
-          .append("</span>");
-      if (!UNKNOWN.equals(fixedV)) {
-        sb.append(" <button class='copy-btn' onclick=\"copyToClipboard('")
-            .append(HtmlEscaper.escapeJsSingleQuoted(fixedV))
-            .append("')\">Copy</button>");
-      }
-      sb.append(DIV_CLOSE);
-      sb.append("<div class='details'>")
-          .append(appendEscapedWithLineBreaks(vuln.details()))
-          .append(DIV_CLOSE);
+              sb.append("<div class='card'>");
+              sb.append("<div class='card-header'>");
+              sb.append("<span class='badge ")
+                  .append(HtmlEscaper.escape(sev.toLowerCase(Locale.ROOT)))
+                  .append("'>")
+                  .append(HtmlEscaper.escape(sev))
+                  .append("</span>");
+              if (score != null) {
+                sb.append("<span class='cvss-score'>CVSS ")
+                    .append(HtmlEscaper.escape(score))
+                    .append("</span>");
+              }
+              sb.append("<span class='vuln-id'><a href='https://osv.dev/vulnerability/")
+                  .append(HtmlEscaper.escape(vuln.id()))
+                  .append("'>")
+                  .append(HtmlEscaper.escape(vuln.id()))
+                  .append("</a></span>");
+              sb.append(DIV_CLOSE);
+              sb.append("<div class='vuln-summary'>")
+                  .append(
+                      vuln.summary() != null ? HtmlEscaper.escape(vuln.summary()) : "No summary")
+                  .append(DIV_CLOSE);
+              sb.append("<div class='fixed-box'>Fixed in: <span class='fixed-ver'>")
+                  .append(HtmlEscaper.escape(fixedV))
+                  .append("</span>");
+              if (!UNKNOWN.equals(fixedV)) {
+                sb.append(" <button class='copy-btn' onclick=\"copyToClipboard('")
+                    .append(HtmlEscaper.escapeJsSingleQuoted(fixedV))
+                    .append("')\">Copy</button>");
+              }
+              sb.append(DIV_CLOSE);
+              sb.append("<div class='details'>")
+                  .append(appendEscapedWithLineBreaks(vuln.details()))
+                  .append(DIV_CLOSE);
 
-      if (vuln.references() != null && !vuln.references().isEmpty()) {
-        sb.append("<div class='references-section'>");
-        sb.append("<div class='references-title'>References</div>");
-        vuln.references().forEach(ref -> {
-          String url = ref.url() == null ? "" : ref.url();
-          sb.append("<div class='reference-item'><a href='")
-              .append(HtmlEscaper.escape(url))
-              .append("'>")
-              .append(HtmlEscaper.escape(url))
-              .append("</a></div>");
-        });
-        sb.append(DIV_CLOSE);
-      }
-      sb.append(DIV_CLOSE);
-    });
+              if (vuln.references() != null && !vuln.references().isEmpty()) {
+                sb.append("<div class='references-section'>");
+                sb.append("<div class='references-title'>References</div>");
+                vuln.references()
+                    .forEach(
+                        ref -> {
+                          String url = ref.url() == null ? "" : ref.url();
+                          sb.append("<div class='reference-item'><a href='")
+                              .append(HtmlEscaper.escape(url))
+                              .append("'>")
+                              .append(HtmlEscaper.escape(url))
+                              .append("</a></div>");
+                        });
+                sb.append(DIV_CLOSE);
+              }
+              sb.append(DIV_CLOSE);
+            });
   }
 
   private void appendDependencyChains(
@@ -708,7 +732,8 @@ public final class SapoToolWindow {
             .append(DIV_CLOSE);
 
         // Intermediate
-        java.util.concurrent.atomic.AtomicInteger idx = new java.util.concurrent.atomic.AtomicInteger(0);
+        java.util.concurrent.atomic.AtomicInteger idx =
+            new java.util.concurrent.atomic.AtomicInteger(0);
         chain.stream()
             .limit((long) chain.size() - 1)
             .forEach(
@@ -769,7 +794,10 @@ public final class SapoToolWindow {
                             java.util.stream.IntStream.range(0, scanResults.size())
                                 .filter(i -> scanResults.get(i).equals(result))
                                 .findFirst()
-                                .ifPresent(i -> tableModel.setValueAt(getAggregateFixedVersion(result), i, 3));
+                                .ifPresent(
+                                    i ->
+                                        tableModel.setValueAt(
+                                            getAggregateFixedVersion(result), i, 3));
 
                             int selectedRow = resultsTable.getSelectedRow();
                             if (selectedRow >= 0) {
@@ -806,11 +834,12 @@ public final class SapoToolWindow {
 
   private String generateHtml(String bodyContent) {
     boolean isDark = ColorUtil.isDark(UIUtil.getPanelBackground());
-    HtmlTheme theme = new HtmlTheme(
-        isDark ? "#1e1e1e" : "#ffffff",
-        isDark ? "#d4d4d4" : "#333333",
-        isDark ? "#252526" : "#ffffff",
-        isDark ? "#454545" : "#e0e0e0");
+    HtmlTheme theme =
+        new HtmlTheme(
+            isDark ? "#1e1e1e" : "#ffffff",
+            isDark ? "#d4d4d4" : "#333333",
+            isDark ? "#252526" : "#ffffff",
+            isDark ? "#454545" : "#e0e0e0");
 
     String headingColor = isDark ? "#ffffff" : "#000000";
 
@@ -923,4 +952,11 @@ public final class SapoToolWindow {
   public JComponent getContent() {
     return content;
   }
+
+  private record HtmlTheme(String bgColor, String textColor, String cardBg, String borderColor) {}
+
+  private record ScrapingTask(String vulnId, VulnerabilityScannerService.ScanResult result) {}
+
+  private record TableRowData(
+      Icon icon, String name, String version, String fixedIn, int vulnCount) {}
 }

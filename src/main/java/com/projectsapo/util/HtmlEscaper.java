@@ -12,9 +12,7 @@ public final class HtmlEscaper {
     throw new UnsupportedOperationException("Utility class");
   }
 
-  /**
-   * Escape HTML special characters to prevent injection.
-   */
+  /** Escape HTML special characters to prevent injection. */
   public static String escape(String value) {
     if (value == null) {
       return "";
@@ -27,9 +25,7 @@ public final class HtmlEscaper {
         .replace("'", "&#39;");
   }
 
-  /**
-   * Escape string for use in JavaScript single-quoted context.
-   */
+  /** Escape string for use in JavaScript single-quoted context. */
   public static String escapeJsSingleQuoted(String value) {
     if (value == null) {
       return "";
@@ -41,4 +37,3 @@ public final class HtmlEscaper {
         .replace("\r", "\\r");
   }
 }
-

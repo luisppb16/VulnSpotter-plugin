@@ -5,54 +5,43 @@
 
 package com.projectsapo.client;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.intellij.util.io.HttpRequests;
 import com.projectsapo.model.OsvBatchQuery;
 import com.projectsapo.model.OsvBatchResponse;
 import com.projectsapo.model.OsvPackage;
 import com.projectsapo.model.OsvQuery;
 import com.projectsapo.model.OsvResponse;
+import com.projectsapo.settings.ProjectSapoSettings;
 import com.projectsapo.util.ProjectConstants;
 import java.io.IOException;
-import java.net.URI;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 /**
- * Client for interacting with the OSV.dev API to check for vulnerabilities.
- * Uses a cached thread pool for asynchronous execution to ensure compatibility with Java 11/17.
+ * Client for interacting with the OSV.dev API to check for vulnerabilities. Uses IntelliJ's
+ * HttpRequests for network calls to integrate properly with IDE's proxy and avoid macOS keychain
+ * popups.
  */
 public class OsvClient {
 
-  private final HttpClient httpClient;
   private final ObjectMapper objectMapper;
   private final ExecutorService executorService;
+  private final ConcurrentHashMap<String, CacheEntry> cache = new ConcurrentHashMap<>();
 
   public OsvClient() {
-    // Changed from newVirtualThreadPerTaskExecutor to newCachedThreadPool for compatibility
     this(Executors.newCachedThreadPool());
   }
 
   public OsvClient(ExecutorService executorService) {
-    this(
-        executorService,
-        HttpClient.newBuilder()
-            .executor(executorService)
-            .connectTimeout(Duration.ofSeconds(10))
-            .build());
-  }
-
-  public OsvClient(ExecutorService executorService, HttpClient httpClient) {
     this.executorService = executorService;
-    this.httpClient = httpClient;
     this.objectMapper = new ObjectMapper();
   }
 
@@ -62,38 +51,49 @@ public class OsvClient {
     Objects.requireNonNull(version, "Version cannot be null");
     Objects.requireNonNull(ecosystem, "Ecosystem cannot be null");
 
+    String cacheKey = ecosystem + ":" + packageName + ":" + version;
+    CacheEntry entry = cache.get(cacheKey);
+    if (entry != null && Instant.now().isBefore(entry.expiration)) {
+      return CompletableFuture.completedFuture(Optional.ofNullable(entry.response));
+    }
+
     return CompletableFuture.supplyAsync(
             () -> {
               try {
                 OsvPackage osvPackage = new OsvPackage(packageName, ecosystem, version);
                 OsvQuery query = new OsvQuery(version, osvPackage);
-                return objectMapper.writeValueAsString(query);
-              } catch (JsonProcessingException e) {
-                throw new RuntimeException(e);
+                String requestBody = objectMapper.writeValueAsString(query);
+
+                return HttpRequests.post(ProjectConstants.OSV_API_URL, "application/json")
+                    .connectTimeout(10000)
+                    .readTimeout(10000)
+                    .connect(
+                        request -> {
+                          request.write(requestBody);
+                          return request.readString();
+                        });
+              } catch (IOException e) {
+                throw new RuntimeException("Failed to call OSV API", e);
               }
             },
             executorService)
-        .thenCompose(
-            requestBody -> {
-              HttpRequest request =
-                  HttpRequest.newBuilder()
-                      .uri(URI.create(ProjectConstants.OSV_API_URL))
-                      .header("Content-Type", "application/json")
-                      .POST(HttpRequest.BodyPublishers.ofString(requestBody))
-                      .build();
-
-              return httpClient.sendAsync(request, HttpResponse.BodyHandlers.ofString());
-            })
         .thenApply(
-            response -> {
-              if (response.statusCode() == 200) {
-                if (response.body().equals("{}")) {
+            responseBody -> {
+              int cacheMinutes =
+                  ProjectSapoSettings.getInstance() != null
+                      ? ProjectSapoSettings.getInstance().getCacheDurationMinutes()
+                      : 60;
+              Instant exp = Instant.now().plus(Duration.ofMinutes(cacheMinutes));
+
+              if (responseBody != null && !responseBody.isEmpty()) {
+                if (responseBody.equals("{}")) {
+                  cache.put(cacheKey, new CacheEntry(null, exp));
                   return Optional.<OsvResponse>empty();
                 }
 
                 try {
-                  OsvResponse osvResponse =
-                      objectMapper.readValue(response.body(), OsvResponse.class);
+                  OsvResponse osvResponse = objectMapper.readValue(responseBody, OsvResponse.class);
+                  cache.put(cacheKey, new CacheEntry(osvResponse, exp));
                   return Optional.of(osvResponse);
                 } catch (IOException e) {
                   return Optional.<OsvResponse>empty();
@@ -111,42 +111,79 @@ public class OsvClient {
 
     return CompletableFuture.supplyAsync(
             () -> {
-              try {
-                List<OsvQuery> queries =
-                    packages.stream().map(pkg -> new OsvQuery(pkg.version(), pkg)).toList();
+              int cacheMinutes =
+                  ProjectSapoSettings.getInstance() != null
+                      ? ProjectSapoSettings.getInstance().getCacheDurationMinutes()
+                      : 60;
+              Instant exp = Instant.now().plus(Duration.ofMinutes(cacheMinutes));
 
-                OsvBatchQuery batchQuery = new OsvBatchQuery(queries);
-                return objectMapper.writeValueAsString(batchQuery);
-              } catch (JsonProcessingException e) {
-                throw new RuntimeException(e);
+              List<OsvResponse> finalResults = new java.util.ArrayList<>(java.util.Collections.nCopies(packages.size(), null));
+              List<OsvQuery> queriesToFetch = new java.util.ArrayList<>();
+              List<Integer> fetchIndices = new java.util.ArrayList<>();
+
+              for (int i = 0; i < packages.size(); i++) {
+                OsvPackage pkg = packages.get(i);
+                String cacheKey = pkg.ecosystem() + ":" + pkg.name() + ":" + pkg.version();
+                CacheEntry entry = cache.get(cacheKey);
+                
+                if (entry != null && Instant.now().isBefore(entry.expiration)) {
+                  finalResults.set(i, entry.response);
+                } else {
+                  queriesToFetch.add(new OsvQuery(pkg.version(), pkg));
+                  fetchIndices.add(i);
+                }
+              }
+
+              if (queriesToFetch.isEmpty()) {
+                return Optional.of(new OsvBatchResponse(finalResults));
+              }
+
+              try {
+                OsvBatchQuery batchQuery = new OsvBatchQuery(queriesToFetch);
+                String requestBody = objectMapper.writeValueAsString(batchQuery);
+
+                String responseBody = HttpRequests.post(ProjectConstants.OSV_API_BATCH_URL, "application/json")
+                    .connectTimeout(10000)
+                    .readTimeout(10000)
+                    .connect(
+                        request -> {
+                          request.write(requestBody);
+                          return request.readString();
+                        });
+
+                if (responseBody != null && !responseBody.isEmpty()) {
+                  OsvBatchResponse partialResponse = objectMapper.readValue(responseBody, OsvBatchResponse.class);
+                  List<OsvResponse> fetchedResults = partialResponse.results() == null ? java.util.Collections.emptyList() : partialResponse.results();
+                  
+                  for (int j = 0; j < fetchIndices.size(); j++) {
+                    int originalIndex = fetchIndices.get(j);
+                    OsvResponse resp = j < fetchedResults.size() ? fetchedResults.get(j) : null;
+                    
+                    // Empty objects in OSV denote no vulnerabilities, Jackson might parse as empty OsvResponse or null
+                    finalResults.set(originalIndex, resp);
+                    
+                    OsvPackage pkg = packages.get(originalIndex);
+                    String cacheKey = pkg.ecosystem() + ":" + pkg.name() + ":" + pkg.version();
+                    cache.put(cacheKey, new CacheEntry(resp, exp));
+                  }
+                }
+                
+                return Optional.of(new OsvBatchResponse(finalResults));
+              } catch (IOException e) {
+                throw new RuntimeException("Failed to call OSV Batch API", e);
               }
             },
             executorService)
-        .thenCompose(
-            requestBody -> {
-              HttpRequest request =
-                  HttpRequest.newBuilder()
-                      .uri(URI.create(ProjectConstants.OSV_API_BATCH_URL))
-                      .header("Content-Type", "application/json")
-                      .POST(HttpRequest.BodyPublishers.ofString(requestBody))
-                      .build();
-
-              return httpClient.sendAsync(request, HttpResponse.BodyHandlers.ofString());
-            })
-        .thenApply(
-            response -> {
-              if (response.statusCode() == 200) {
-                try {
-                  OsvBatchResponse batchResponse =
-                      objectMapper.readValue(response.body(), OsvBatchResponse.class);
-                  return Optional.of(batchResponse);
-                } catch (IOException e) {
-                  return Optional.<OsvBatchResponse>empty();
-                }
-              } else {
-                return Optional.<OsvBatchResponse>empty();
-              }
-            })
         .exceptionally(ex -> Optional.empty());
+  }
+
+  private static class CacheEntry {
+    OsvResponse response;
+    Instant expiration;
+
+    CacheEntry(OsvResponse r, Instant e) {
+      this.response = r;
+      this.expiration = e;
+    }
   }
 }

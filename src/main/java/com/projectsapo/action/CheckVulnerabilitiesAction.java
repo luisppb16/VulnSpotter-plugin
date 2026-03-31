@@ -60,11 +60,12 @@ public class CheckVulnerabilitiesAction extends AnAction {
 
                 try {
                   List<VulnerabilityScannerService.ScanResult> results =
-                      VulnerabilityScannerService.getInstance(project)
-                          .scanDependencies()
-                          .join();
+                      VulnerabilityScannerService.getInstance(project).scanDependencies().join();
 
-                  long vulnerableCount = results.stream().filter(VulnerabilityScannerService.ScanResult::vulnerable).count();
+                  long vulnerableCount =
+                      results.stream()
+                          .filter(VulnerabilityScannerService.ScanResult::vulnerable)
+                          .count();
 
                   if (vulnerableCount > 0) {
                     showNotification(
@@ -80,17 +81,14 @@ public class CheckVulnerabilitiesAction extends AnAction {
                         NotificationType.INFORMATION);
                   }
                 } catch (Exception ex) {
-                   showNotification(
-                        project,
-                        "Scan failed: " + ex.getMessage(),
-                        NotificationType.ERROR);
+                  showNotification(
+                      project, "Scan failed: " + ex.getMessage(), NotificationType.ERROR);
                 }
               }
             });
   }
 
-  private void showNotification(
-      Project project, String content, NotificationType type) {
+  private void showNotification(Project project, String content, NotificationType type) {
     ApplicationManager.getApplication()
         .invokeLater(
             () -> {
