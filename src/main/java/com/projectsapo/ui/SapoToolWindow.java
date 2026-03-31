@@ -939,7 +939,7 @@ public final class SapoToolWindow {
   private String findFixedVersion(OsvVulnerability v, String pkgName, String currentVersion) {
     if (v.affected() == null) return UNKNOWN;
     List<String> fixedVersions = v.affected().stream()
-        .filter(a -> a.pkg() == null || pkgName.equals(a.pkg().name()))
+        .filter(a -> a.pkg() == null || isMatchingPackage(pkgName, a.pkg().name()))
         .filter(a -> a.ranges() != null)
         .flatMap(a -> a.ranges().stream())
         .filter(r -> r.events() != null)
@@ -960,6 +960,21 @@ public final class SapoToolWindow {
     }
 
     return String.join(", ", fixedVersions);
+  }
+
+  private boolean isMatchingPackage(String scannedPkg, String vulnPkg) {
+    if (scannedPkg == null || vulnPkg == null) return false;
+    if (scannedPkg.equals(vulnPkg)) return true;
+
+    // Check if one is a suffix of the other (e.g. "jackson-core" vs "com.fasterxml.jackson.core:jackson-core")
+    if (vulnPkg.endsWith(":" + scannedPkg)) return true;
+    if (scannedPkg.endsWith(":" + vulnPkg)) return true;
+
+    // Further check for just the artifact ID just in case
+    String scannedArtifact = scannedPkg.contains(":") ? scannedPkg.substring(scannedPkg.indexOf(':') + 1) : scannedPkg;
+    String vulnArtifact = vulnPkg.contains(":") ? vulnPkg.substring(vulnPkg.indexOf(':') + 1) : vulnPkg;
+
+    return scannedArtifact.equals(vulnArtifact);
   }
 
   public JComponent getContent() {
