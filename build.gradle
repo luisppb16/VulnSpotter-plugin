@@ -28,7 +28,7 @@ dependencies {
     implementation 'com.github.javaparser:javaparser-core:3.26.2'
 
     // JSON - Jackson
-    implementation 'com.fasterxml.jackson.core:jackson-databind:3.1.0'
+    implementation 'com.fasterxml.jackson.core:jackson-databind:2.18.3'
 
     // Report export (HTML -> PDF)
     implementation 'com.openhtmltopdf:openhtmltopdf-pdfbox:1.0.10'
@@ -46,6 +46,7 @@ dependencies {
         intellijIdeaCommunity '2025.1'
         bundledPlugin 'org.jetbrains.idea.maven'
         bundledPlugin 'com.intellij.gradle'
+        bundledPlugin 'org.intellij.groovy'
     }
 }
 

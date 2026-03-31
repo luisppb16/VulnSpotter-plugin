@@ -28,6 +28,7 @@ import com.projectsapo.report.VulnerabilityReportBuilder;
 import com.projectsapo.service.VulnerabilityScannerService;
 import com.projectsapo.util.HtmlEscaper;
 import com.projectsapo.util.SeverityAnalyzer;
+import com.projectsapo.util.VersionUtil;
 import java.awt.*;
 import java.io.File;
 import java.io.IOException;
@@ -104,7 +105,7 @@ public final class SapoToolWindow {
   private final SeverityAnalyzer severityAnalyzer = new SeverityAnalyzer();
 
   // Cache for scraped fixed versions: VulnID -> Version
-  private final Map<String, String> scrapedVersions = new ConcurrentHashMap<>();
+  
   private final Set<String> scrapingInProgress =
       Collections.newSetFromMap(new ConcurrentHashMap<>());
   private java.util.concurrent.CountDownLatch scrapingLatch;
@@ -185,6 +186,8 @@ public final class SapoToolWindow {
           }
         });
     searchField.setPreferredSize(new Dimension(250, 30));
+    searchField.setMinimumSize(new Dimension(250, 30));
+    searchField.setMaximumSize(new Dimension(250, 30));
 
     toolbar.add(leftActions, BorderLayout.WEST);
     content.add(toolbar, BorderLayout.NORTH);
@@ -318,7 +321,7 @@ public final class SapoToolWindow {
     progressBar.setVisible(true);
     tableModel.setRowCount(0);
     scanResults.clear();
-    scrapedVersions.clear(); // Clear cache on new scan
+    VulnerabilityScannerService.getInstance(project).getScrapedVersions().clear(); // Clear cache on new scan
     scrapingInProgress.clear();
 
     VulnerabilityScannerService.getInstance(project)
@@ -328,7 +331,7 @@ public final class SapoToolWindow {
                 ApplicationManager.getApplication()
                     .invokeLater(
                         () -> {
-                          scanResults.addAll(results);
+                          scanResults.addAll(results);          VulnerabilityScannerService.getInstance(project).setLastResults(scanResults);
                           @SuppressWarnings("unchecked")
                           Vector<Vector<Object>> dataVector = (Vector) tableModel.getDataVector();
                           int firstRow = dataVector.size();
@@ -357,7 +360,7 @@ public final class SapoToolWindow {
                                       .filter(
                                           v ->
                                               UNKNOWN.equals(
-                                                  findFixedVersion(v, result.pkg().name())))
+                                                  findFixedVersion(v, result.pkg().name(), result.pkg().version())))
                                       .forEach(v -> scrapeFixedVersion(v.id(), result));
                                 }
                               });
@@ -416,7 +419,7 @@ public final class SapoToolWindow {
 
               String htmlReport =
                   VulnerabilityReportBuilder.buildProjectReport(
-                      project.getName(), List.copyOf(scanResults), new HashMap<>(scrapedVersions));
+                      project.getName(), List.copyOf(scanResults), new HashMap<>(VulnerabilityScannerService.getInstance(project).getScrapedVersions()));
 
               try {
                 if ("pdf".equals(extension)) {
@@ -484,17 +487,15 @@ public final class SapoToolWindow {
     if (!result.vulnerable()) return "";
     String versions =
         result.vulnerabilities().stream()
-            .map(
+            .flatMap(
                 vuln -> {
-                  String f = findFixedVersion(vuln, result.pkg().name());
-                  return UNKNOWN.equals(f) && scrapedVersions.containsKey(vuln.id())
-                      ? scrapedVersions.get(vuln.id())
+                  String f = findFixedVersion(vuln, result.pkg().name(), result.pkg().version());
+                  f = UNKNOWN.equals(f) && VulnerabilityScannerService.getInstance(project).getScrapedVersions().containsKey(vuln.id())
+                      ? VulnerabilityScannerService.getInstance(project).getScrapedVersions().get(vuln.id())
                       : f;
+                  return UNKNOWN.equals(f) ? java.util.stream.Stream.<String>empty() : java.util.Arrays.stream(f.split(", "));
                 })
-            .filter(f -> !UNKNOWN.equals(f))
             .distinct()
-            .toList()
-            .stream()
             .collect(java.util.stream.Collectors.joining(", "));
     return versions.isEmpty() ? UNKNOWN : versions;
   }
@@ -536,10 +537,10 @@ public final class SapoToolWindow {
         result.vulnerabilities().stream()
             .map(
                 vuln -> {
-                  String f = findFixedVersion(vuln, result.pkg().name());
+                  String f = findFixedVersion(vuln, result.pkg().name(), result.pkg().version());
                   if (UNKNOWN.equals(f)) {
-                    if (scrapedVersions.containsKey(vuln.id())) {
-                      f = scrapedVersions.get(vuln.id());
+                    if (VulnerabilityScannerService.getInstance(project).getScrapedVersions().containsKey(vuln.id())) {
+                      f = VulnerabilityScannerService.getInstance(project).getScrapedVersions().get(vuln.id());
                     } else {
                       scrapeFixedVersion(vuln.id(), result);
                     }
@@ -654,10 +655,10 @@ public final class SapoToolWindow {
         .forEach(
             vuln -> {
               String sev = getSeverity(vuln);
-              String fixedV = findFixedVersion(vuln, result.pkg().name());
+              String fixedV = findFixedVersion(vuln, result.pkg().name(), result.pkg().version());
               fixedV =
-                  UNKNOWN.equals(fixedV) && scrapedVersions.containsKey(vuln.id())
-                      ? scrapedVersions.get(vuln.id())
+                  UNKNOWN.equals(fixedV) && VulnerabilityScannerService.getInstance(project).getScrapedVersions().containsKey(vuln.id())
+                      ? VulnerabilityScannerService.getInstance(project).getScrapedVersions().get(vuln.id())
                       : fixedV;
               String score = getScore(vuln);
 
@@ -786,7 +787,7 @@ public final class SapoToolWindow {
                 Matcher m = FIXED_VERSION_PATTERN.matcher(html);
                 if (m.find()) {
                   String ver = m.group(1);
-                  scrapedVersions.put(vulnId, ver);
+                  VulnerabilityScannerService.getInstance(project).getScrapedVersions().put(vulnId, ver);
 
                   ApplicationManager.getApplication()
                       .invokeLater(
@@ -935,9 +936,9 @@ public final class SapoToolWindow {
     return severityAnalyzer.getSeverity(v);
   }
 
-  private String findFixedVersion(OsvVulnerability v, String pkgName) {
+  private String findFixedVersion(OsvVulnerability v, String pkgName, String currentVersion) {
     if (v.affected() == null) return UNKNOWN;
-    return v.affected().stream()
+    List<String> fixedVersions = v.affected().stream()
         .filter(a -> a.pkg() == null || pkgName.equals(a.pkg().name()))
         .filter(a -> a.ranges() != null)
         .flatMap(a -> a.ranges().stream())
@@ -945,8 +946,20 @@ public final class SapoToolWindow {
         .flatMap(r -> r.events().stream())
         .map(OsvVulnerability.Event::fixed)
         .filter(Objects::nonNull)
-        .findFirst()
-        .orElse(UNKNOWN);
+        .distinct()
+        .toList();
+
+    if (fixedVersions.isEmpty()) return UNKNOWN;
+    if (currentVersion == null || currentVersion.isBlank()) {
+        return String.join(", ", fixedVersions);
+    }
+
+    String best = VersionUtil.findBestFixedVersion(fixedVersions, currentVersion);
+    if (best != null) {
+        return best;
+    }
+
+    return String.join(", ", fixedVersions);
   }
 
   public JComponent getContent() {

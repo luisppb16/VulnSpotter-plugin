@@ -37,6 +37,7 @@
     <depends>com.intellij.modules.platform</depends>
     <depends>org.jetbrains.idea.maven</depends>
     <depends>com.intellij.gradle</depends>
+    <depends>org.intellij.groovy</depends>
 
     <extensions defaultExtensionNs="com.intellij">
         <applicationService serviceImplementation="com.projectsapo.settings.ProjectSapoSettings"/>
@@ -45,6 +46,7 @@
                 implementation="com.projectsapo.sync.ProjectSyncListener"/>
 
         <annotator language="XML" implementationClass="com.projectsapo.annotator.DependencyAnnotator"/>
+        <annotator language="Groovy" implementationClass="com.projectsapo.annotator.DependencyAnnotator"/>
 
         <toolWindow id="Project Sapo"
                     secondary="false"
