@@ -1,3 +1,10 @@
+/*
+ * *****************************************************************************
+ * Copyright (c)  2026 Luis Paolo Pepe Barra (@LuisPPB16).
+ * All rights reserved.
+ * *****************************************************************************
+ */
+
 package com.projectsapo.benchmark;
 
 import static org.junit.jupiter.api.Assertions.assertTrue;
