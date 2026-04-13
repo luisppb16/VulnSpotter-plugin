@@ -32,6 +32,14 @@ Alternatively, you can install it manually from disk if you have the `.jar` or `
 *   IntelliJ IDEA (Platform)
 *   Gradle Plugin
 *   Maven Plugin
+*   Compatible build range: `251.*` (IntelliJ IDEA 2025.1)
+
+## 🔐 Privacy & Network Behavior
+
+*   Project Sapo calls `api.osv.dev` to check vulnerabilities.
+*   Data sent: dependency coordinates (`name`, `ecosystem`, `version`).
+*   Data not sent: project source code.
+*   Automatic scan after project sync is **disabled by default** (opt-in behavior).
 
 ## 📝 Change Log
 
@@ -40,6 +48,11 @@ Alternatively, you can install it manually from disk if you have the `.jar` or `
 *   Full support for parsing dependencies from both Gradle and Maven build systems.
 *   Connects to the Open Source Vulnerabilities database for up-to-date security info.
 *   Added a dedicated Tool Window with sorting, filtering, and detailed HTML reports.
+
+### Marketplace Compliance Update
+*   Declared explicit IntelliJ build compatibility range.
+*   Added transparent data-handling and network behavior documentation.
+*   Changed auto-scan on sync to opt-in by default.
 
 ## 👤 Author
 
