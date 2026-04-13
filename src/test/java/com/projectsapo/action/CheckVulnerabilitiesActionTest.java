@@ -13,15 +13,19 @@ import com.intellij.notification.Notifications;
 import com.intellij.openapi.actionSystem.AnActionEvent;
 import com.intellij.openapi.application.Application;
 import com.intellij.openapi.application.ApplicationManager;
+import com.intellij.openapi.progress.ProgressIndicator;
 import com.intellij.openapi.progress.ProgressManager;
 import com.intellij.openapi.progress.Task;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.wm.ToolWindow;
 import com.intellij.openapi.wm.ToolWindowManager;
+import com.intellij.ui.content.Content;
+import com.intellij.ui.content.ContentManager;
 import com.intellij.util.messages.MessageBus;
 import com.projectsapo.service.VulnerabilityScannerService;
 import com.projectsapo.ui.SapoToolWindow;
 import com.projectsapo.ui.SapoToolWindowFactory;
+import java.util.Collections;
 import java.util.concurrent.CompletableFuture;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -41,8 +45,8 @@ class CheckVulnerabilitiesActionTest {
   @Mock private Project project;
   @Mock private ToolWindowManager toolWindowManager;
   @Mock private ToolWindow toolWindow;
-  @Mock private com.intellij.ui.content.ContentManager contentManager;
-  @Mock private com.intellij.ui.content.Content content;
+  @Mock private ContentManager contentManager;
+  @Mock private Content content;
   @Mock private SapoToolWindow sapoToolWindow;
   @Mock private ProgressManager progressManager;
   @Mock private VulnerabilityScannerService scannerService;
@@ -134,7 +138,7 @@ class CheckVulnerabilitiesActionTest {
     doAnswer(
             invocation -> {
               Task.Backgroundable task = invocation.getArgument(0);
-              task.run(mock(com.intellij.openapi.progress.ProgressIndicator.class));
+              task.run(mock(ProgressIndicator.class));
               return null;
             })
         .when(progressManager)
@@ -142,7 +146,7 @@ class CheckVulnerabilitiesActionTest {
 
     // Mock the scanner service to complete immediately
     when(scannerService.scanDependencies())
-        .thenReturn(CompletableFuture.completedFuture(java.util.Collections.emptyList()));
+        .thenReturn(CompletableFuture.completedFuture(Collections.emptyList()));
 
     // Act
     action.actionPerformed(event);

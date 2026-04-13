@@ -17,6 +17,8 @@ import com.projectsapo.util.ProjectConstants;
 import java.io.IOException;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
@@ -117,15 +119,16 @@ public class OsvClient {
                       : 60;
               Instant exp = Instant.now().plus(Duration.ofMinutes(cacheMinutes));
 
-              List<OsvResponse> finalResults = new java.util.ArrayList<>(java.util.Collections.nCopies(packages.size(), null));
-              List<OsvQuery> queriesToFetch = new java.util.ArrayList<>();
-              List<Integer> fetchIndices = new java.util.ArrayList<>();
+              List<OsvResponse> finalResults =
+                  new ArrayList<>(Collections.nCopies(packages.size(), null));
+              List<OsvQuery> queriesToFetch = new ArrayList<>();
+              List<Integer> fetchIndices = new ArrayList<>();
 
               for (int i = 0; i < packages.size(); i++) {
                 OsvPackage pkg = packages.get(i);
                 String cacheKey = pkg.ecosystem() + ":" + pkg.name() + ":" + pkg.version();
                 CacheEntry entry = cache.get(cacheKey);
-                
+
                 if (entry != null && Instant.now().isBefore(entry.expiration)) {
                   finalResults.set(i, entry.response);
                 } else {
@@ -142,32 +145,38 @@ public class OsvClient {
                 OsvBatchQuery batchQuery = new OsvBatchQuery(queriesToFetch);
                 String requestBody = objectMapper.writeValueAsString(batchQuery);
 
-                String responseBody = HttpRequests.post(ProjectConstants.OSV_API_BATCH_URL, "application/json")
-                    .connectTimeout(10000)
-                    .readTimeout(10000)
-                    .connect(
-                        request -> {
-                          request.write(requestBody);
-                          return request.readString();
-                        });
+                String responseBody =
+                    HttpRequests.post(ProjectConstants.OSV_API_BATCH_URL, "application/json")
+                        .connectTimeout(10000)
+                        .readTimeout(10000)
+                        .connect(
+                            request -> {
+                              request.write(requestBody);
+                              return request.readString();
+                            });
 
                 if (responseBody != null && !responseBody.isEmpty()) {
-                  OsvBatchResponse partialResponse = objectMapper.readValue(responseBody, OsvBatchResponse.class);
-                  List<OsvResponse> fetchedResults = partialResponse.results() == null ? java.util.Collections.emptyList() : partialResponse.results();
-                  
+                  OsvBatchResponse partialResponse =
+                      objectMapper.readValue(responseBody, OsvBatchResponse.class);
+                  List<OsvResponse> fetchedResults =
+                      partialResponse.results() == null
+                          ? Collections.emptyList()
+                          : partialResponse.results();
+
                   for (int j = 0; j < fetchIndices.size(); j++) {
                     int originalIndex = fetchIndices.get(j);
                     OsvResponse resp = j < fetchedResults.size() ? fetchedResults.get(j) : null;
-                    
-                    // Empty objects in OSV denote no vulnerabilities, Jackson might parse as empty OsvResponse or null
+
+                    // Empty objects in OSV denote no vulnerabilities, Jackson might parse as empty
+                    // OsvResponse or null
                     finalResults.set(originalIndex, resp);
-                    
+
                     OsvPackage pkg = packages.get(originalIndex);
                     String cacheKey = pkg.ecosystem() + ":" + pkg.name() + ":" + pkg.version();
                     cache.put(cacheKey, new CacheEntry(resp, exp));
                   }
                 }
-                
+
                 return Optional.of(new OsvBatchResponse(finalResults));
               } catch (IOException e) {
                 throw new RuntimeException("Failed to call OSV Batch API", e);

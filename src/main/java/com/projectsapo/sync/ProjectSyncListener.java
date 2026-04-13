@@ -10,6 +10,7 @@ import com.intellij.openapi.externalSystem.model.task.ExternalSystemTaskNotifica
 import com.intellij.openapi.externalSystem.model.task.ExternalSystemTaskType;
 import com.intellij.openapi.project.Project;
 import com.projectsapo.service.VulnerabilityScannerService;
+import com.projectsapo.settings.ProjectSapoSettings;
 
 public class ProjectSyncListener implements ExternalSystemTaskNotificationListener {
   @Override
@@ -18,6 +19,9 @@ public class ProjectSyncListener implements ExternalSystemTaskNotificationListen
     if (id.getType() == ExternalSystemTaskType.RESOLVE_PROJECT) {
       Project project = id.findProject();
       if (project != null) {
+        if (!ProjectSapoSettings.getInstance().isAutoScanOnSync()) {
+          return;
+        }
         VulnerabilityScannerService scanner = project.getService(VulnerabilityScannerService.class);
         if (scanner != null) {
           scanner.scanDependencies();

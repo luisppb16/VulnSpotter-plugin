@@ -17,6 +17,7 @@ import com.intellij.openapi.progress.Task;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.wm.ToolWindow;
 import com.intellij.openapi.wm.ToolWindowManager;
+import com.intellij.ui.content.Content;
 import com.projectsapo.service.VulnerabilityScannerService;
 import com.projectsapo.ui.SapoToolWindow;
 import com.projectsapo.ui.SapoToolWindowFactory;
@@ -39,7 +40,7 @@ public class CheckVulnerabilitiesAction extends AnAction {
     if (toolWindow != null) {
       toolWindow.show(
           () -> {
-            com.intellij.ui.content.Content content = toolWindow.getContentManager().getContent(0);
+            Content content = toolWindow.getContentManager().getContent(0);
             if (content != null) {
               SapoToolWindow sapoToolWindow =
                   content.getUserData(SapoToolWindowFactory.SAPO_TOOL_WINDOW_KEY);

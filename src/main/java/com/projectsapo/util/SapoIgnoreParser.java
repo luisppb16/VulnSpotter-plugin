@@ -23,19 +23,20 @@ public final class SapoIgnoreParser {
     if (project.getBasePath() == null) {
       return Collections.emptySet();
     }
-    
+
     Path ignoreFilePath = Paths.get(project.getBasePath(), ".sapoignore");
     if (!Files.exists(ignoreFilePath)) {
       return Collections.emptySet();
     }
-    
+
     try {
       List<String> lines = Files.readAllLines(ignoreFilePath);
       Set<String> ignored = new HashSet<>();
       for (String line : lines) {
         String trimmed = line.trim();
         if (!trimmed.isEmpty() && !trimmed.startsWith("#")) {
-          // Store just the name, or ecosystem:name if provided. We simplify to just names for exact matches.
+          // Store just the name, or ecosystem:name if provided. We simplify to just names for exact
+          // matches.
           ignored.add(trimmed);
         }
       }
@@ -45,4 +46,3 @@ public final class SapoIgnoreParser {
     }
   }
 }
-

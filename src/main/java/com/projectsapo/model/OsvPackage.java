@@ -19,6 +19,7 @@ public record OsvPackage(
     String name, String ecosystem, String version, Set<List<String>> dependencyChains) {
   public OsvPackage {
     Objects.requireNonNull(name, "Package name cannot be null");
+    Objects.requireNonNull(version, "Version cannot be null");
     Objects.requireNonNull(ecosystem, "Ecosystem cannot be null");
     dependencyChains = dependencyChains != null ? Set.copyOf(dependencyChains) : Set.of();
   }

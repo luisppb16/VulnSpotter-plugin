@@ -191,7 +191,13 @@ public final class DependencyParser {
     if (!Files.exists(reqTxtPath)) return;
 
     List<String> lines = Files.readAllLines(reqTxtPath);
-    for (String line : lines) {
+    for (String rawLine : lines) {
+      String line = rawLine.trim();
+      if (line.isEmpty() || line.startsWith("#") || line.startsWith("-")) continue;
+      int hashIdx = line.indexOf('#');
+      if (hashIdx >= 0) {
+        line = line.substring(0, hashIdx).trim();
+      }
       if (line.contains("==")) {
         String[] parts = line.split("==");
         if (parts.length == 2) {
@@ -208,17 +214,31 @@ public final class DependencyParser {
     if (!Files.exists(goModPath)) return;
 
     List<String> lines = Files.readAllLines(goModPath);
-    for (String line : lines) {
-      line = line.trim();
-      if (!line.startsWith("module ")
-          && !line.startsWith("require (")
-          && !line.equals(")")
-          && !line.isEmpty()) {
-        String[] parts = line.split("\\s+");
-        if (parts.length >= 2) {
-          String version = parts[1].replace("v", "");
-          allPackages.add(new OsvPackage(parts[0], "Go", version));
-        }
+    boolean inRequireBlock = false;
+    for (String rawLine : lines) {
+      String line = rawLine.trim();
+      if (line.startsWith("require (")) {
+        inRequireBlock = true;
+        continue;
+      }
+      if (inRequireBlock && line.equals(")")) {
+        inRequireBlock = false;
+        continue;
+      }
+      if (line.startsWith("module ")
+          || line.startsWith("go ")
+          || line.isEmpty()
+          || line.startsWith("//")) {
+        continue;
+      }
+      if (!inRequireBlock && !line.startsWith("require ")) {
+        continue;
+      }
+      String depLine = inRequireBlock ? line : line.substring("require ".length()).trim();
+      String[] parts = depLine.split("\\s+");
+      if (parts.length >= 2) {
+        String version = parts[1].replaceFirst("^v", "");
+        allPackages.add(new OsvPackage(parts[0], "Go", version));
       }
     }
   }

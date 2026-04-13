@@ -9,6 +9,7 @@ import static org.junit.jupiter.api.Assertions.*;
 
 import java.lang.reflect.Constructor;
 import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Modifier;
 import org.junit.jupiter.api.Test;
 
 class ProjectConstantsTest {
@@ -21,7 +22,7 @@ class ProjectConstantsTest {
   @Test
   void testPrivateConstructor() throws NoSuchMethodException {
     Constructor<ProjectConstants> constructor = ProjectConstants.class.getDeclaredConstructor();
-    assertTrue(java.lang.reflect.Modifier.isPrivate(constructor.getModifiers()));
+    assertTrue(Modifier.isPrivate(constructor.getModifiers()));
     constructor.setAccessible(true);
     try {
       constructor.newInstance();

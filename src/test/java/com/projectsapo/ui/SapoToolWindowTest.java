@@ -16,6 +16,7 @@ import com.intellij.openapi.project.Project;
 import com.intellij.ui.jcef.JBCefBrowser;
 import com.projectsapo.model.OsvPackage;
 import com.projectsapo.service.VulnerabilityScannerService;
+import java.awt.Component;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import javax.swing.*;
@@ -113,7 +114,7 @@ class SapoToolWindowTest {
   }
 
   private JButton findScanButton(JComponent component) {
-    for (java.awt.Component c : component.getComponents()) {
+    for (Component c : component.getComponents()) {
       if (c instanceof JButton && "Scan Dependencies".equals(((JButton) c).getText())) {
         return (JButton) c;
       }

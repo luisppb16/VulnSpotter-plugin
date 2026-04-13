@@ -41,19 +41,25 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
-import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
-import java.util.Vector;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
+import java.util.stream.IntStream;
+import java.util.stream.Stream;
 import javax.swing.*;
+import javax.swing.event.DocumentEvent;
 import javax.swing.filechooser.FileNameExtensionFilter;
 import javax.swing.table.DefaultTableModel;
 import javax.swing.table.TableColumn;
@@ -105,10 +111,11 @@ public final class SapoToolWindow {
   private final SeverityAnalyzer severityAnalyzer = new SeverityAnalyzer();
 
   // Cache for scraped fixed versions: VulnID -> Version
-  
+
   private final Set<String> scrapingInProgress =
       Collections.newSetFromMap(new ConcurrentHashMap<>());
-  private java.util.concurrent.CountDownLatch scrapingLatch;
+  private final Object scrapingLock = new Object();
+  private volatile CountDownLatch scrapingLatch;
 
   public SapoToolWindow(Project project) {
     this.project = project;
@@ -173,15 +180,11 @@ public final class SapoToolWindow {
     progressBar.setPreferredSize(new Dimension(100, 16));
     leftActions.add(progressBar);
 
-    // Removed exportHtmlButton.addActionListener(e -> exportReport(false)) from original logic since we have changed it to format string
-    exportHtmlButton.removeActionListener(exportHtmlButton.getActionListeners()[0]);
-    exportHtmlButton.addActionListener(e -> exportReport("html"));
-
     searchField = new SearchTextField();
     searchField.addDocumentListener(
         new DocumentAdapter() {
           @Override
-          protected void textChanged(javax.swing.event.DocumentEvent e) {
+          protected void textChanged(DocumentEvent e) {
             applyFilters();
           }
         });
@@ -321,7 +324,9 @@ public final class SapoToolWindow {
     progressBar.setVisible(true);
     tableModel.setRowCount(0);
     scanResults.clear();
-    VulnerabilityScannerService.getInstance(project).getScrapedVersions().clear(); // Clear cache on new scan
+    VulnerabilityScannerService.getInstance(project)
+        .getScrapedVersions()
+        .clear(); // Clear cache on new scan
     scrapingInProgress.clear();
 
     VulnerabilityScannerService.getInstance(project)
@@ -331,41 +336,38 @@ public final class SapoToolWindow {
                 ApplicationManager.getApplication()
                     .invokeLater(
                         () -> {
-                          scanResults.addAll(results);          VulnerabilityScannerService.getInstance(project).setLastResults(scanResults);
-                          @SuppressWarnings("unchecked")
-                          Vector<Vector<Object>> dataVector = (Vector) tableModel.getDataVector();
-                          int firstRow = dataVector.size();
+                          scanResults.addAll(results);
+                          VulnerabilityScannerService.getInstance(project)
+                              .setLastResults(scanResults);
                           results.forEach(
                               result -> {
                                 String highestSev = getHighestSeverity(result.vulnerabilities());
                                 String fixedVer = getAggregateFixedVersion(result);
-                                TableRowData rowData =
-                                    new TableRowData(
-                                        getSeverityIcon(highestSev),
-                                        result.pkg().name(),
-                                        result.pkg().version(),
-                                        fixedVer,
-                                        result.vulnerabilities().size());
+                                Object[] rowData =
+                                    new Object[] {
+                                      getSeverityIcon(highestSev),
+                                      result.pkg().name(),
+                                      result.pkg().version(),
+                                      fixedVer,
+                                      result.vulnerabilities().size()
+                                    };
 
-                                Vector<Object> row = new Vector<>(5);
-                                row.add(rowData.icon());
-                                row.add(rowData.name());
-                                row.add(rowData.version());
-                                row.add(rowData.fixedIn());
-                                row.add(rowData.vulnCount());
-                                dataVector.add(row);
+                                tableModel.addRow(rowData);
 
                                 if (result.vulnerable() && UNKNOWN.equals(fixedVer)) {
                                   result.vulnerabilities().stream()
                                       .filter(
                                           v ->
                                               UNKNOWN.equals(
-                                                  findFixedVersion(v, result.pkg().name(), result.pkg().version())))
+                                                  findFixedVersion(
+                                                      v,
+                                                      result.pkg().name(),
+                                                      result.pkg().version())))
                                       .forEach(v -> scrapeFixedVersion(v.id(), result));
                                 }
                               });
                           if (!results.isEmpty()) {
-                            tableModel.fireTableRowsInserted(firstRow, dataVector.size() - 1);
+                            tableModel.fireTableDataChanged();
                             cardLayout.show(mainPanel, "RESULTS");
                           }
                           scanButton.setEnabled(true);
@@ -402,24 +404,30 @@ public final class SapoToolWindow {
 
     setExportButtonsEnabled(false);
     statusLabel.setText("Waiting for scraped versions...");
-    scrapingLatch = new java.util.concurrent.CountDownLatch(scrapingInProgress.size());
+
+    CountDownLatch currentLatch;
+    synchronized (scrapingLock) {
+      currentLatch = new CountDownLatch(scrapingInProgress.size());
+      scrapingLatch = currentLatch;
+    }
 
     ApplicationManager.getApplication()
         .executeOnPooledThread(
             () -> {
               boolean timedOut;
               try {
-                timedOut =
-                    !scrapingLatch.await(
-                        EXPORT_WAIT_TIMEOUT_MS, java.util.concurrent.TimeUnit.MILLISECONDS);
+                timedOut = !currentLatch.await(EXPORT_WAIT_TIMEOUT_MS, TimeUnit.MILLISECONDS);
               } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 timedOut = true;
               }
 
+              Map<String, String> scrapedSnapshot =
+                  Map.copyOf(VulnerabilityScannerService.getInstance(project).getScrapedVersions());
+
               String htmlReport =
                   VulnerabilityReportBuilder.buildProjectReport(
-                      project.getName(), List.copyOf(scanResults), new HashMap<>(VulnerabilityScannerService.getInstance(project).getScrapedVersions()));
+                      project.getName(), List.copyOf(scanResults), scrapedSnapshot);
 
               try {
                 if ("pdf".equals(extension)) {
@@ -490,13 +498,19 @@ public final class SapoToolWindow {
             .flatMap(
                 vuln -> {
                   String f = findFixedVersion(vuln, result.pkg().name(), result.pkg().version());
-                  f = UNKNOWN.equals(f) && VulnerabilityScannerService.getInstance(project).getScrapedVersions().containsKey(vuln.id())
-                      ? VulnerabilityScannerService.getInstance(project).getScrapedVersions().get(vuln.id())
-                      : f;
-                  return UNKNOWN.equals(f) ? java.util.stream.Stream.<String>empty() : java.util.Arrays.stream(f.split(", "));
+                  f =
+                      UNKNOWN.equals(f)
+                              && VulnerabilityScannerService.getInstance(project)
+                                  .getScrapedVersions()
+                                  .containsKey(vuln.id())
+                          ? VulnerabilityScannerService.getInstance(project)
+                              .getScrapedVersions()
+                              .get(vuln.id())
+                          : f;
+                  return UNKNOWN.equals(f) ? Stream.empty() : Arrays.stream(f.split(", "));
                 })
             .distinct()
-            .collect(java.util.stream.Collectors.joining(", "));
+            .collect(Collectors.joining(", "));
     return versions.isEmpty() ? UNKNOWN : versions;
   }
 
@@ -539,8 +553,13 @@ public final class SapoToolWindow {
                 vuln -> {
                   String f = findFixedVersion(vuln, result.pkg().name(), result.pkg().version());
                   if (UNKNOWN.equals(f)) {
-                    if (VulnerabilityScannerService.getInstance(project).getScrapedVersions().containsKey(vuln.id())) {
-                      f = VulnerabilityScannerService.getInstance(project).getScrapedVersions().get(vuln.id());
+                    if (VulnerabilityScannerService.getInstance(project)
+                        .getScrapedVersions()
+                        .containsKey(vuln.id())) {
+                      f =
+                          VulnerabilityScannerService.getInstance(project)
+                              .getScrapedVersions()
+                              .get(vuln.id());
                     } else {
                       scrapeFixedVersion(vuln.id(), result);
                     }
@@ -548,7 +567,7 @@ public final class SapoToolWindow {
                   return f;
                 })
             .filter(f -> !UNKNOWN.equals(f))
-            .collect(java.util.stream.Collectors.toSet());
+            .collect(Collectors.toSet());
 
     boolean hasFix = !fixedVersions.isEmpty();
     String fixedVerStr = hasFix ? String.join(", ", fixedVersions) : UNKNOWN;
@@ -657,8 +676,13 @@ public final class SapoToolWindow {
               String sev = getSeverity(vuln);
               String fixedV = findFixedVersion(vuln, result.pkg().name(), result.pkg().version());
               fixedV =
-                  UNKNOWN.equals(fixedV) && VulnerabilityScannerService.getInstance(project).getScrapedVersions().containsKey(vuln.id())
-                      ? VulnerabilityScannerService.getInstance(project).getScrapedVersions().get(vuln.id())
+                  UNKNOWN.equals(fixedV)
+                          && VulnerabilityScannerService.getInstance(project)
+                              .getScrapedVersions()
+                              .containsKey(vuln.id())
+                      ? VulnerabilityScannerService.getInstance(project)
+                          .getScrapedVersions()
+                          .get(vuln.id())
                       : fixedV;
               String score = getScore(vuln);
 
@@ -689,7 +713,7 @@ public final class SapoToolWindow {
                   .append("</span>");
               if (!UNKNOWN.equals(fixedV)) {
                 sb.append(" <button class='copy-btn' onclick=\"copyToClipboard('")
-                    .append(HtmlEscaper.escapeJsSingleQuoted(fixedV))
+                    .append(HtmlEscaper.escape(HtmlEscaper.escapeJsSingleQuoted(fixedV)))
                     .append("')\">Copy</button>");
               }
               sb.append(DIV_CLOSE);
@@ -733,8 +757,7 @@ public final class SapoToolWindow {
             .append(DIV_CLOSE);
 
         // Intermediate
-        java.util.concurrent.atomic.AtomicInteger idx =
-            new java.util.concurrent.atomic.AtomicInteger(0);
+        AtomicInteger idx = new AtomicInteger(0);
         chain.stream()
             .limit((long) chain.size() - 1)
             .forEach(
@@ -764,7 +787,9 @@ public final class SapoToolWindow {
   }
 
   private void scrapeFixedVersion(String vulnId, VulnerabilityScannerService.ScanResult result) {
-    if (!scrapingInProgress.add(vulnId)) return;
+    synchronized (scrapingLock) {
+      if (!scrapingInProgress.add(vulnId)) return;
+    }
 
     ApplicationManager.getApplication()
         .executeOnPooledThread(
@@ -787,12 +812,14 @@ public final class SapoToolWindow {
                 Matcher m = FIXED_VERSION_PATTERN.matcher(html);
                 if (m.find()) {
                   String ver = m.group(1);
-                  VulnerabilityScannerService.getInstance(project).getScrapedVersions().put(vulnId, ver);
+                  VulnerabilityScannerService.getInstance(project)
+                      .getScrapedVersions()
+                      .put(vulnId, ver);
 
                   ApplicationManager.getApplication()
                       .invokeLater(
                           () -> {
-                            java.util.stream.IntStream.range(0, scanResults.size())
+                            IntStream.range(0, scanResults.size())
                                 .filter(i -> scanResults.get(i).equals(result))
                                 .findFirst()
                                 .ifPresent(
@@ -817,8 +844,9 @@ public final class SapoToolWindow {
                   connection.disconnect();
                 }
                 scrapingInProgress.remove(vulnId);
-                if (scrapingLatch != null) {
-                  scrapingLatch.countDown();
+                CountDownLatch latch = scrapingLatch;
+                if (latch != null) {
+                  latch.countDown();
                 }
               }
             });
@@ -938,25 +966,26 @@ public final class SapoToolWindow {
 
   private String findFixedVersion(OsvVulnerability v, String pkgName, String currentVersion) {
     if (v.affected() == null) return UNKNOWN;
-    List<String> fixedVersions = v.affected().stream()
-        .filter(a -> a.pkg() == null || isMatchingPackage(pkgName, a.pkg().name()))
-        .filter(a -> a.ranges() != null)
-        .flatMap(a -> a.ranges().stream())
-        .filter(r -> r.events() != null)
-        .flatMap(r -> r.events().stream())
-        .map(OsvVulnerability.Event::fixed)
-        .filter(Objects::nonNull)
-        .distinct()
-        .toList();
+    List<String> fixedVersions =
+        v.affected().stream()
+            .filter(a -> a.pkg() != null && isMatchingPackage(pkgName, a.pkg().name()))
+            .filter(a -> a.ranges() != null)
+            .flatMap(a -> a.ranges().stream())
+            .filter(r -> r.events() != null)
+            .flatMap(r -> r.events().stream())
+            .map(OsvVulnerability.Event::fixed)
+            .filter(Objects::nonNull)
+            .distinct()
+            .toList();
 
     if (fixedVersions.isEmpty()) return UNKNOWN;
     if (currentVersion == null || currentVersion.isBlank()) {
-        return String.join(", ", fixedVersions);
+      return String.join(", ", fixedVersions);
     }
 
     String best = VersionUtil.findBestFixedVersion(fixedVersions, currentVersion);
     if (best != null) {
-        return best;
+      return best;
     }
 
     return String.join(", ", fixedVersions);
@@ -966,13 +995,16 @@ public final class SapoToolWindow {
     if (scannedPkg == null || vulnPkg == null) return false;
     if (scannedPkg.equals(vulnPkg)) return true;
 
-    // Check if one is a suffix of the other (e.g. "jackson-core" vs "com.fasterxml.jackson.core:jackson-core")
+    // Check if one is a suffix of the other (e.g. "jackson-core" vs
+    // "com.fasterxml.jackson.core:jackson-core")
     if (vulnPkg.endsWith(":" + scannedPkg)) return true;
     if (scannedPkg.endsWith(":" + vulnPkg)) return true;
 
     // Further check for just the artifact ID just in case
-    String scannedArtifact = scannedPkg.contains(":") ? scannedPkg.substring(scannedPkg.indexOf(':') + 1) : scannedPkg;
-    String vulnArtifact = vulnPkg.contains(":") ? vulnPkg.substring(vulnPkg.indexOf(':') + 1) : vulnPkg;
+    String scannedArtifact =
+        scannedPkg.contains(":") ? scannedPkg.substring(scannedPkg.indexOf(':') + 1) : scannedPkg;
+    String vulnArtifact =
+        vulnPkg.contains(":") ? vulnPkg.substring(vulnPkg.indexOf(':') + 1) : vulnPkg;
 
     return scannedArtifact.equals(vulnArtifact);
   }

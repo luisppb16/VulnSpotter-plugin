@@ -21,6 +21,7 @@ public class ProjectSapoSettings implements PersistentStateComponent<ProjectSapo
   private int cacheDurationMinutes = 60;
   private String minimumSeverity = "LOW";
   private List<String> ignoredCves = new ArrayList<>();
+  private boolean autoScanOnSync = false;
 
   public static ProjectSapoSettings getInstance() {
     return ApplicationManager.getApplication().getService(ProjectSapoSettings.class);
@@ -48,6 +49,14 @@ public class ProjectSapoSettings implements PersistentStateComponent<ProjectSapo
 
   public void setIgnoredCves(List<String> ignoredCves) {
     this.ignoredCves = ignoredCves;
+  }
+
+  public boolean isAutoScanOnSync() {
+    return autoScanOnSync;
+  }
+
+  public void setAutoScanOnSync(boolean autoScanOnSync) {
+    this.autoScanOnSync = autoScanOnSync;
   }
 
   @Nullable

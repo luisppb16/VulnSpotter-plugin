@@ -9,11 +9,14 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.openhtmltopdf.pdfboxout.PdfRendererBuilder;
+import com.projectsapo.model.OsvVulnerability;
+import com.projectsapo.service.VulnerabilityScannerService;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 
 /** Exports vulnerability reports into HTML and PDF files, and now JSON/SARIF. */
 public final class ReportExportService {
@@ -30,7 +33,7 @@ public final class ReportExportService {
     try (OutputStream outputStream = Files.newOutputStream(outputPath)) {
       PdfRendererBuilder builder = new PdfRendererBuilder();
       builder.useFastMode();
-      builder.withHtmlContent(html, null);
+      builder.withHtmlContent(html, "file:///");
       builder.toStream(outputStream);
       builder.run();
     }
@@ -42,12 +45,11 @@ public final class ReportExportService {
   }
 
   public static void exportCsv(
-      java.util.List<com.projectsapo.service.VulnerabilityScannerService.ScanResult> scanResults,
-      Path outputPath)
+      List<VulnerabilityScannerService.ScanResult> scanResults, Path outputPath)
       throws IOException {
     StringBuilder csv = new StringBuilder();
     csv.append("Package,Version,Vulnerable,Vulnerabilities Count,Ecosystem\n");
-    for (com.projectsapo.service.VulnerabilityScannerService.ScanResult result : scanResults) {
+    for (VulnerabilityScannerService.ScanResult result : scanResults) {
       csv.append(
           String.format(
               "\"%s\",\"%s\",%b,%d,\"%s\"\n",
@@ -60,9 +62,9 @@ public final class ReportExportService {
     Files.writeString(outputPath, csv.toString(), StandardCharsets.UTF_8);
   }
 
-  public static void exportSarif(Path outputPath)
-      throws
-          IOException { // removed scanResults for now since it's unhandled to match spec simplified
+  public static void exportSarif(
+      List<VulnerabilityScannerService.ScanResult> scanResults, Path outputPath)
+      throws IOException {
     ObjectNode sarif = MAPPER.createObjectNode();
     sarif.put("version", "2.1.0");
     sarif.put(
@@ -74,11 +76,30 @@ public final class ReportExportService {
     ObjectNode tool = run.putObject("tool");
     ObjectNode driver = tool.putObject("driver");
     driver.put("name", "Project Sapo");
-    driver.put("version", "1.1.3");
+    driver.put("version", "1.1.3.1");
 
-    // Simplification for representation, real implementation would convert raw scanResults
-    // iteratively
-    run.putArray("results");
+    ArrayNode results = run.putArray("results");
+    for (VulnerabilityScannerService.ScanResult sr : scanResults) {
+      if (!sr.vulnerable()) continue;
+      for (OsvVulnerability vuln : sr.vulnerabilities()) {
+        ObjectNode result = results.addObject();
+        result.put("ruleId", vuln.id() != null ? vuln.id() : "unknown");
+        ObjectNode message = result.putObject("message");
+        message.put(
+            "text",
+            vuln.summary() != null
+                ? sr.pkg().name() + ": " + vuln.summary()
+                : sr.pkg().name() + " has vulnerability " + vuln.id());
+        result.put("level", "warning");
+
+        ObjectNode location = result.putArray("locations").addObject();
+        ObjectNode physicalLocation = location.putObject("physicalLocation");
+        ObjectNode artifact = physicalLocation.putObject("artifact");
+        artifact.put("uri", "dependency:" + sr.pkg().ecosystem() + "/" + sr.pkg().name());
+        ObjectNode region = physicalLocation.putObject("region");
+        region.put("startLine", 1);
+      }
+    }
 
     exportJson(sarif, outputPath);
   }
