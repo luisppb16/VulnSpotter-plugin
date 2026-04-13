@@ -1,6 +1,8 @@
 /*
- * Copyright (c) 2026 Luis Paolo Pepe Barra (@LuisPPB16).
+ * *****************************************************************************
+ * Copyright (c)  2026 Luis Paolo Pepe Barra (@LuisPPB16).
  * All rights reserved.
+ * *****************************************************************************
  */
 
 package com.projectsapo.report;
@@ -75,7 +77,7 @@ public final class ReportExportService {
     ObjectNode run = runs.addObject();
     ObjectNode tool = run.putObject("tool");
     ObjectNode driver = tool.putObject("driver");
-    driver.put("name", "Project Sapo");
+    driver.put("name", "VulnSpotter");
     driver.put("version", "1.1.3.1");
 
     ArrayNode results = run.putArray("results");

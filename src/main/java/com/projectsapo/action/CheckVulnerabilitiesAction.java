@@ -1,6 +1,8 @@
 /*
- * Copyright (c) 2026 Luis Paolo Pepe Barra (@LuisPPB16).
+ * *****************************************************************************
+ * Copyright (c)  2026 Luis Paolo Pepe Barra (@LuisPPB16).
  * All rights reserved.
+ * *****************************************************************************
  */
 
 package com.projectsapo.action;
@@ -27,8 +29,8 @@ import org.jetbrains.annotations.NotNull;
 /** Action to trigger vulnerability checks. */
 public class CheckVulnerabilitiesAction extends AnAction {
 
-  private static final String TITLE = "Project Sapo";
-  private static final String NOTIFICATION_GROUP_ID = "Project Sapo Notifications";
+  private static final String TITLE = "VulnSpotter";
+  private static final String NOTIFICATION_GROUP_ID = "VulnSpotter Notifications";
 
   @Override
   public void actionPerformed(@NotNull AnActionEvent e) {
@@ -73,7 +75,7 @@ public class CheckVulnerabilitiesAction extends AnAction {
                         project,
                         "Scan complete. Found vulnerabilities in "
                             + vulnerableCount
-                            + " dependencies. Check the Project Sapo tool window for details.",
+                            + " dependencies. Check the VulnSpotter tool window for details.",
                         NotificationType.WARNING);
                   } else {
                     showNotification(

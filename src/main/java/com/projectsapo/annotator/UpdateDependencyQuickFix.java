@@ -1,6 +1,8 @@
 /*
- * Copyright (c) 2026 Luis Paolo Pepe Barra (@LuisPPB16).
+ * *****************************************************************************
+ * Copyright (c)  2026 Luis Paolo Pepe Barra (@LuisPPB16).
  * All rights reserved.
+ * *****************************************************************************
  */
 
 package com.projectsapo.annotator;
@@ -21,7 +23,7 @@ public class UpdateDependencyQuickFix implements IntentionAction {
 
   @Override
   public @NotNull String getFamilyName() {
-    return "Project Sapo";
+    return "VulnSpotter";
   }
 
   @Override

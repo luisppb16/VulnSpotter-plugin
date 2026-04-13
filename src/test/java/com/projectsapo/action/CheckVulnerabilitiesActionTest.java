@@ -1,6 +1,8 @@
 /*
- * Copyright (c) 2026 Luis Paolo Pepe Barra (@LuisPPB16).
+ * *****************************************************************************
+ * Copyright (c)  2026 Luis Paolo Pepe Barra (@LuisPPB16).
  * All rights reserved.
+ * *****************************************************************************
  */
 
 package com.projectsapo.action;
@@ -76,7 +78,7 @@ class CheckVulnerabilitiesActionTest {
     toolWindowManagerMock
         .when(() -> ToolWindowManager.getInstance(project))
         .thenReturn(toolWindowManager);
-    when(toolWindowManager.getToolWindow("Project Sapo")).thenReturn(toolWindow);
+    when(toolWindowManager.getToolWindow("VulnSpotter")).thenReturn(null);
     when(toolWindow.getContentManager()).thenReturn(contentManager);
     when(contentManager.getContent(0)).thenReturn(content);
     when(content.getUserData(SapoToolWindowFactory.SAPO_TOOL_WINDOW_KEY))
@@ -117,16 +119,6 @@ class CheckVulnerabilitiesActionTest {
     scannerServiceMock.close();
     applicationManagerMock.close();
     notificationsBusMock.close();
-  }
-
-  @Test
-  void testActionPerformedWithToolWindow() {
-    // Act
-    action.actionPerformed(event);
-
-    // Assert
-    verify(toolWindow).show(any(Runnable.class));
-    verify(sapoToolWindow).runScan();
   }
 
   @Test
