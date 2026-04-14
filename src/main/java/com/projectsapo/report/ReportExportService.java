@@ -5,14 +5,14 @@
  * *****************************************************************************
  */
 
-package com.projectsapo.report;
+package com.VulnSpotter.report;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.openhtmltopdf.pdfboxout.PdfRendererBuilder;
-import com.projectsapo.model.OsvVulnerability;
-import com.projectsapo.service.VulnerabilityScannerService;
+import com.VulnSpotter.model.OsvVulnerability;
+import com.VulnSpotter.service.VulnerabilityScannerService;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;

@@ -5,7 +5,7 @@
  * *****************************************************************************
  */
 
-package com.projectsapo.ui;
+package com.VulnSpotter.ui;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
@@ -16,8 +16,8 @@ import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.application.ModalityState;
 import com.intellij.openapi.project.Project;
 import com.intellij.ui.jcef.JBCefBrowser;
-import com.projectsapo.model.OsvPackage;
-import com.projectsapo.service.VulnerabilityScannerService;
+import com.VulnSpotter.model.OsvPackage;
+import com.VulnSpotter.service.VulnerabilityScannerService;
 import java.awt.Component;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;

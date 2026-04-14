@@ -5,10 +5,10 @@
  * *****************************************************************************
  */
 
-package com.projectsapo.util;
+package com.VulnSpotter.util;
 
 /**
- * Constants used throughout the Project Sapo application. Contains API URLs, configuration keys,
+ * Constants used throughout the VulnSpotter application. Contains API URLs, configuration keys,
  * and other hardcoded values.
  */
 public final class ProjectConstants {

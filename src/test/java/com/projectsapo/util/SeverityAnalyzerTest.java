@@ -5,11 +5,11 @@
  * *****************************************************************************
  */
 
-package com.projectsapo.util;
+package com.VulnSpotter.util;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.projectsapo.model.OsvVulnerability;
+import com.VulnSpotter.model.OsvVulnerability;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;

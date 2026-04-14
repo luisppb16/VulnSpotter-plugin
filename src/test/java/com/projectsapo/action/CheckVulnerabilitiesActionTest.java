@@ -5,7 +5,7 @@
  * *****************************************************************************
  */
 
-package com.projectsapo.action;
+package com.VulnSpotter.action;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
@@ -24,9 +24,9 @@ import com.intellij.openapi.wm.ToolWindowManager;
 import com.intellij.ui.content.Content;
 import com.intellij.ui.content.ContentManager;
 import com.intellij.util.messages.MessageBus;
-import com.projectsapo.service.VulnerabilityScannerService;
-import com.projectsapo.ui.SapoToolWindow;
-import com.projectsapo.ui.SapoToolWindowFactory;
+import com.VulnSpotter.service.VulnerabilityScannerService;
+import com.VulnSpotter.ui.SapoToolWindow;
+import com.VulnSpotter.ui.SapoToolWindowFactory;
 import java.util.Collections;
 import java.util.concurrent.CompletableFuture;
 import org.junit.jupiter.api.AfterEach;
@@ -124,7 +124,7 @@ class CheckVulnerabilitiesActionTest {
   @Test
   void testActionPerformedWithoutToolWindow() {
     // Arrange
-    when(toolWindowManager.getToolWindow("Project Sapo")).thenReturn(null);
+    when(toolWindowManager.getToolWindow("VulnSpotter")).thenReturn(null);
 
     // Mock the ProgressManager to execute the task
     doAnswer(

@@ -5,7 +5,7 @@
  * *****************************************************************************
  */
 
-package com.projectsapo.report;
+package com.VulnSpotter.report;
 
 import static org.junit.jupiter.api.Assertions.assertTrue;
 

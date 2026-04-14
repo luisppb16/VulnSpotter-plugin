@@ -5,7 +5,7 @@
  * *****************************************************************************
  */
 
-package com.projectsapo.util;
+package com.VulnSpotter.util;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -30,7 +30,7 @@ import com.intellij.openapi.roots.libraries.Library;
 import com.intellij.openapi.roots.libraries.LibraryTable;
 import com.intellij.openapi.roots.libraries.LibraryTablesRegistrar;
 import com.intellij.openapi.vfs.VirtualFile;
-import com.projectsapo.model.OsvPackage;
+import com.VulnSpotter.model.OsvPackage;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;

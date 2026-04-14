@@ -6,7 +6,7 @@
   -->
 
 <idea-plugin>
-    <id>com.projectsapo</id>
+    <id>com.VulnSpotter</id>
     <name>VulnSpotter</name>
     <vendor email="ironkrozz@gmail.com">Luis Pepe</vendor>
 
@@ -29,7 +29,7 @@
 
     <change-notes><![CDATA[
         <ul>
-            <li><b>Name Change (April 13, 2026):</b> Renamed the plugin from "Project Sapo" to "VulnSpotter" for better searchability and branding.</li>
+            <li><b>Name Change (April 13, 2026):</b> Renamed the plugin from "VulnSpotter" to "VulnSpotter" for better searchability and branding.</li>
             <li><b>Initial Release:</b> First public release of VulnSpotter.</li>
             <li><b>Gradle & Maven Support:</b> Full support for parsing dependencies from both Gradle and Maven build systems.</li>
             <li><b>OSV.dev Integration:</b> Connects to the Open Source Vulnerabilities database for up-to-date security info.</li>
@@ -43,19 +43,19 @@
     <depends>org.intellij.groovy</depends>
 
     <extensions defaultExtensionNs="com.intellij">
-        <applicationService serviceImplementation="com.projectsapo.settings.ProjectSapoSettings"/>
+        <applicationService serviceImplementation="com.VulnSpotter.settings.VulnSpotterSettings"/>
 
         <externalSystemTaskNotificationListener
-                implementation="com.projectsapo.sync.ProjectSyncListener"/>
+                implementation="com.VulnSpotter.sync.ProjectSyncListener"/>
 
-        <annotator language="XML" implementationClass="com.projectsapo.annotator.DependencyAnnotator"/>
-        <annotator language="Groovy" implementationClass="com.projectsapo.annotator.DependencyAnnotator"/>
+        <annotator language="XML" implementationClass="com.VulnSpotter.annotator.DependencyAnnotator"/>
+        <annotator language="Groovy" implementationClass="com.VulnSpotter.annotator.DependencyAnnotator"/>
 
         <toolWindow id="VulnSpotter"
                     secondary="false"
                     icon="/icons/pluginIcon.svg"
                     anchor="bottom"
-                    factoryClass="com.projectsapo.ui.SapoToolWindowFactory"/>
+                    factoryClass="com.VulnSpotter.ui.SapoToolWindowFactory"/>
         <notificationGroup id="VulnSpotter Notifications"
                            displayType="BALLOON"/>
     </extensions>

@@ -5,7 +5,7 @@
  * *****************************************************************************
  */
 
-package com.projectsapo.util;
+package com.VulnSpotter.util;
 
 import static org.assertj.core.api.Assertions.assertThat;
 

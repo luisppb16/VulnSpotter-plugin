@@ -5,7 +5,7 @@
  * *****************************************************************************
  */
 
-package com.projectsapo.ui;
+package com.VulnSpotter.ui;
 
 import java.text.NumberFormat;
 import java.text.ParseException;

@@ -5,7 +5,7 @@
  * *****************************************************************************
  */
 
-package com.projectsapo.util;
+package com.VulnSpotter.util;
 
 /** Utility for HTML escaping and encoding. */
 public final class HtmlEscaper {

@@ -5,7 +5,7 @@
  * *****************************************************************************
  */
 
-package com.projectsapo.util;
+package com.VulnSpotter.util;
 
 import com.intellij.openapi.project.Project;
 import java.io.IOException;

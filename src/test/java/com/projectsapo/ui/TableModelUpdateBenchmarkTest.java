@@ -5,7 +5,7 @@
  * *****************************************************************************
  */
 
-package com.projectsapo.ui;
+package com.VulnSpotter.ui;
 
 import java.util.Vector;
 import javax.swing.table.DefaultTableModel;

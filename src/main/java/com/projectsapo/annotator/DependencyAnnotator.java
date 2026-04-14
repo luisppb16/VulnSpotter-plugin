@@ -5,13 +5,13 @@
  * *****************************************************************************
  */
 
-package com.projectsapo.annotator;
+package com.VulnSpotter.annotator;
 
 import com.intellij.lang.annotation.AnnotationHolder;
 import com.intellij.lang.annotation.Annotator;
 import com.intellij.openapi.project.Project;
 import com.intellij.psi.PsiElement;
-import com.projectsapo.service.VulnerabilityScannerService;
+import com.VulnSpotter.service.VulnerabilityScannerService;
 import org.jetbrains.annotations.NotNull;
 
 public class DependencyAnnotator implements Annotator {

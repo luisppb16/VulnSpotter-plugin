@@ -5,17 +5,17 @@
  * *****************************************************************************
  */
 
-package com.projectsapo.client;
+package com.VulnSpotter.client;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.intellij.util.io.HttpRequests;
-import com.projectsapo.model.OsvBatchQuery;
-import com.projectsapo.model.OsvBatchResponse;
-import com.projectsapo.model.OsvPackage;
-import com.projectsapo.model.OsvQuery;
-import com.projectsapo.model.OsvResponse;
-import com.projectsapo.settings.ProjectSapoSettings;
-import com.projectsapo.util.ProjectConstants;
+import com.VulnSpotter.model.OsvBatchQuery;
+import com.VulnSpotter.model.OsvBatchResponse;
+import com.VulnSpotter.model.OsvPackage;
+import com.VulnSpotter.model.OsvQuery;
+import com.VulnSpotter.model.OsvResponse;
+import com.VulnSpotter.settings.VulnSpotterSettings;
+import com.VulnSpotter.util.ProjectConstants;
 import java.io.IOException;
 import java.time.Duration;
 import java.time.Instant;
@@ -84,8 +84,8 @@ public class OsvClient {
         .thenApply(
             responseBody -> {
               int cacheMinutes =
-                  ProjectSapoSettings.getInstance() != null
-                      ? ProjectSapoSettings.getInstance().getCacheDurationMinutes()
+                  VulnSpotterSettings.getInstance() != null
+                      ? VulnSpotterSettings.getInstance().getCacheDurationMinutes()
                       : 60;
               Instant exp = Instant.now().plus(Duration.ofMinutes(cacheMinutes));
 
@@ -116,8 +116,8 @@ public class OsvClient {
     return CompletableFuture.supplyAsync(
             () -> {
               int cacheMinutes =
-                  ProjectSapoSettings.getInstance() != null
-                      ? ProjectSapoSettings.getInstance().getCacheDurationMinutes()
+                  VulnSpotterSettings.getInstance() != null
+                      ? VulnSpotterSettings.getInstance().getCacheDurationMinutes()
                       : 60;
               Instant exp = Instant.now().plus(Duration.ofMinutes(cacheMinutes));
 

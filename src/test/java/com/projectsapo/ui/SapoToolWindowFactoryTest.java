@@ -5,7 +5,7 @@
  * *****************************************************************************
  */
 
-package com.projectsapo.ui;
+package com.VulnSpotter.ui;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
@@ -21,7 +21,7 @@ import com.intellij.ui.content.Content;
 import com.intellij.ui.content.ContentFactory;
 import com.intellij.ui.content.ContentManager;
 import com.intellij.ui.jcef.JBCefBrowser;
-import com.projectsapo.service.VulnerabilityScannerService;
+import com.VulnSpotter.service.VulnerabilityScannerService;
 import javax.swing.*;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;

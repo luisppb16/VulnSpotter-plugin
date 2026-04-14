@@ -5,7 +5,7 @@
  * *****************************************************************************
  */
 
-package com.projectsapo.settings;
+package com.VulnSpotter.settings;
 
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.components.PersistentStateComponent;
@@ -17,16 +17,16 @@ import java.util.List;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
-@State(name = "ProjectSapoSettings", storages = @Storage("ProjectSapoSettings.xml"))
-public class ProjectSapoSettings implements PersistentStateComponent<ProjectSapoSettings> {
+@State(name = "VulnSpotterSettings", storages = @Storage("VulnSpotterSettings.xml"))
+public class VulnSpotterSettings implements PersistentStateComponent<VulnSpotterSettings> {
 
   private int cacheDurationMinutes = 60;
   private String minimumSeverity = "LOW";
   private List<String> ignoredCves = new ArrayList<>();
   private boolean autoScanOnSync = false;
 
-  public static ProjectSapoSettings getInstance() {
-    return ApplicationManager.getApplication().getService(ProjectSapoSettings.class);
+  public static VulnSpotterSettings getInstance() {
+    return ApplicationManager.getApplication().getService(VulnSpotterSettings.class);
   }
 
   public int getCacheDurationMinutes() {
@@ -63,12 +63,12 @@ public class ProjectSapoSettings implements PersistentStateComponent<ProjectSapo
 
   @Nullable
   @Override
-  public ProjectSapoSettings getState() {
+  public VulnSpotterSettings getState() {
     return this;
   }
 
   @Override
-  public void loadState(@NotNull ProjectSapoSettings state) {
+  public void loadState(@NotNull VulnSpotterSettings state) {
     XmlSerializerUtil.copyBean(state, this);
   }
 }

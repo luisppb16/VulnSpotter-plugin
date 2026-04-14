@@ -5,7 +5,7 @@
  * *****************************************************************************
  */
 
-package com.projectsapo.annotator;
+package com.VulnSpotter.annotator;
 
 import com.intellij.codeInsight.intention.IntentionAction;
 import com.intellij.openapi.editor.Editor;

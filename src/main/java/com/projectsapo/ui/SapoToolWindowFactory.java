@@ -5,7 +5,7 @@
  * *****************************************************************************
  */
 
-package com.projectsapo.ui;
+package com.VulnSpotter.ui;
 
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.Key;
@@ -18,7 +18,7 @@ import org.jetbrains.annotations.NotNull;
 public class SapoToolWindowFactory implements ToolWindowFactory {
 
   public static final Key<SapoToolWindow> SAPO_TOOL_WINDOW_KEY =
-      Key.create("com.projectsapo.ui.SapoToolWindow");
+      Key.create("com.VulnSpotter.ui.SapoToolWindow");
 
   @Override
   public void createToolWindowContent(@NotNull Project project, @NotNull ToolWindow toolWindow) {

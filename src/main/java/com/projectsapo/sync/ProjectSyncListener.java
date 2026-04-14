@@ -5,14 +5,14 @@
  * *****************************************************************************
  */
 
-package com.projectsapo.sync;
+package com.VulnSpotter.sync;
 
 import com.intellij.openapi.externalSystem.model.task.ExternalSystemTaskId;
 import com.intellij.openapi.externalSystem.model.task.ExternalSystemTaskNotificationListener;
 import com.intellij.openapi.externalSystem.model.task.ExternalSystemTaskType;
 import com.intellij.openapi.project.Project;
-import com.projectsapo.service.VulnerabilityScannerService;
-import com.projectsapo.settings.ProjectSapoSettings;
+import com.VulnSpotter.service.VulnerabilityScannerService;
+import com.VulnSpotter.settings.VulnSpotterSettings;
 
 public class ProjectSyncListener implements ExternalSystemTaskNotificationListener {
   @Override
@@ -21,7 +21,7 @@ public class ProjectSyncListener implements ExternalSystemTaskNotificationListen
     if (id.getType() == ExternalSystemTaskType.RESOLVE_PROJECT) {
       Project project = id.findProject();
       if (project != null) {
-        if (!ProjectSapoSettings.getInstance().isAutoScanOnSync()) {
+        if (!VulnSpotterSettings.getInstance().isAutoScanOnSync()) {
           return;
         }
         VulnerabilityScannerService scanner = project.getService(VulnerabilityScannerService.class);

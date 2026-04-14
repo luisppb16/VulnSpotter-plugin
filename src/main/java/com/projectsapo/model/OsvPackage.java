@@ -5,7 +5,7 @@
  * *****************************************************************************
  */
 
-package com.projectsapo.model;
+package com.VulnSpotter.model;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import java.util.List;

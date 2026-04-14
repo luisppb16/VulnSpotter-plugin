@@ -5,7 +5,7 @@
  * *****************************************************************************
  */
 
-package com.projectsapo.ui;
+package com.VulnSpotter.ui;
 
 import com.intellij.icons.AllIcons;
 import com.intellij.ide.BrowserUtil;
@@ -24,13 +24,13 @@ import com.intellij.ui.table.JBTable;
 import com.intellij.util.IconUtil;
 import com.intellij.util.ui.JBUI;
 import com.intellij.util.ui.UIUtil;
-import com.projectsapo.model.OsvVulnerability;
-import com.projectsapo.report.ReportExportService;
-import com.projectsapo.report.VulnerabilityReportBuilder;
-import com.projectsapo.service.VulnerabilityScannerService;
-import com.projectsapo.util.HtmlEscaper;
-import com.projectsapo.util.SeverityAnalyzer;
-import com.projectsapo.util.VersionUtil;
+import com.VulnSpotter.model.OsvVulnerability;
+import com.VulnSpotter.report.ReportExportService;
+import com.VulnSpotter.report.VulnerabilityReportBuilder;
+import com.VulnSpotter.service.VulnerabilityScannerService;
+import com.VulnSpotter.util.HtmlEscaper;
+import com.VulnSpotter.util.SeverityAnalyzer;
+import com.VulnSpotter.util.VersionUtil;
 import java.awt.*;
 import java.io.File;
 import java.io.IOException;
@@ -72,7 +72,7 @@ import org.cef.handler.CefRequestHandlerAdapter;
 import org.cef.network.CefRequest;
 
 /**
- * Modern UI for Project Sapo using JCEF. Replicates Snyk's design for dependency chains and
+ * Modern UI for VulnSpotter using JCEF. Replicates Snyk's design for dependency chains and
  * severity badges.
  */
 public final class SapoToolWindow {
@@ -266,7 +266,7 @@ public final class SapoToolWindow {
     cardLayout.show(mainPanel, "EMPTY");
 
     browser.loadHTML(
-        generateHtml("<h1>Project Sapo</h1><p>Select a dependency to see details.</p>"));
+        generateHtml("<h1>VulnSpotter</h1><p>Select a dependency to see details.</p>"));
   }
 
   private JPanel createEmptyStatePanel() {

@@ -5,9 +5,9 @@
  * *****************************************************************************
  */
 
-package com.projectsapo.util;
+package com.VulnSpotter.util;
 
-import com.projectsapo.model.OsvVulnerability;
+import com.VulnSpotter.model.OsvVulnerability;
 import java.text.NumberFormat;
 import java.text.ParseException;
 import java.util.List;

@@ -5,12 +5,12 @@
  * *****************************************************************************
  */
 
-package com.projectsapo.benchmark;
+package com.VulnSpotter.benchmark;
 
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import com.projectsapo.model.OsvPackage;
-import com.projectsapo.util.PackageKey;
+import com.VulnSpotter.model.OsvPackage;
+import com.VulnSpotter.util.PackageKey;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;

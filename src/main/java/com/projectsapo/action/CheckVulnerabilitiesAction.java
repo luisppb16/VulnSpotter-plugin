@@ -5,7 +5,7 @@
  * *****************************************************************************
  */
 
-package com.projectsapo.action;
+package com.VulnSpotter.action;
 
 import com.intellij.notification.Notification;
 import com.intellij.notification.NotificationType;
@@ -20,9 +20,9 @@ import com.intellij.openapi.project.Project;
 import com.intellij.openapi.wm.ToolWindow;
 import com.intellij.openapi.wm.ToolWindowManager;
 import com.intellij.ui.content.Content;
-import com.projectsapo.service.VulnerabilityScannerService;
-import com.projectsapo.ui.SapoToolWindow;
-import com.projectsapo.ui.SapoToolWindowFactory;
+import com.VulnSpotter.service.VulnerabilityScannerService;
+import com.VulnSpotter.ui.SapoToolWindow;
+import com.VulnSpotter.ui.SapoToolWindowFactory;
 import java.util.List;
 import org.jetbrains.annotations.NotNull;
 
