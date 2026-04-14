@@ -11,12 +11,12 @@ plugins {
     id 'jacoco'
 }
 
-group = 'com.VulnSpotter'
-version = '1.1.3.1'
+group = 'com.vulnspotter'
+version = '1.1.3.2'
 
 repositories {
     mavenCentral()
-    maven { url 'https://repo.gradle.org/gradle/libs-releases' }
+    maven { url = 'https://repo.gradle.org/gradle/libs-releases' }
     intellijPlatform {
         defaultRepositories()
     }
@@ -90,4 +90,12 @@ task integrationTest(type: Test) {
     systemProperty 'java.awt.headless', 'true'
     systemProperty 'idea.home.path', intellijPlatform.platformPath
     systemProperty 'idea.skip.indices.initialization', 'true'
+}
+
+intellijPlatform {
+    pluginVerification {
+        ides {
+            recommended()
+        }
+    }
 }

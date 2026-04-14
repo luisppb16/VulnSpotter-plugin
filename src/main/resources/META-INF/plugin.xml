@@ -6,7 +6,7 @@
   -->
 
 <idea-plugin>
-    <id>com.VulnSpotter</id>
+    <id>com.vulnspotter</id>
     <name>VulnSpotter</name>
     <vendor email="ironkrozz@gmail.com">Luis Pepe</vendor>
 
@@ -43,19 +43,19 @@
     <depends>org.intellij.groovy</depends>
 
     <extensions defaultExtensionNs="com.intellij">
-        <applicationService serviceImplementation="com.VulnSpotter.settings.VulnSpotterSettings"/>
+        <applicationService serviceImplementation="com.vulnspotter.settings.vulnSpotterSettings"/>
 
         <externalSystemTaskNotificationListener
-                implementation="com.VulnSpotter.sync.ProjectSyncListener"/>
+                implementation="com.vulnspotter.sync.ProjectSyncListener"/>
 
-        <annotator language="XML" implementationClass="com.VulnSpotter.annotator.DependencyAnnotator"/>
-        <annotator language="Groovy" implementationClass="com.VulnSpotter.annotator.DependencyAnnotator"/>
+        <annotator language="XML" implementationClass="com.vulnspotter.annotator.DependencyAnnotator"/>
+        <annotator language="Groovy" implementationClass="com.vulnspotter.annotator.DependencyAnnotator"/>
 
         <toolWindow id="VulnSpotter"
                     secondary="false"
                     icon="/icons/pluginIcon.svg"
                     anchor="bottom"
-                    factoryClass="com.VulnSpotter.ui.SapoToolWindowFactory"/>
+                    factoryClass="com.vulnspotter.ui.SapoToolWindowFactory"/>
         <notificationGroup id="VulnSpotter Notifications"
                            displayType="BALLOON"/>
     </extensions>
