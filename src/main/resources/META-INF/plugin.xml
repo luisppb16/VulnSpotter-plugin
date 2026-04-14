@@ -6,7 +6,7 @@
   -->
 
 <idea-plugin>
-    <id>com.vulnspotter</id>
+    <id>com.projectsapo</id>
     <name>VulnSpotter</name>
     <vendor email="ironkrozz@gmail.com">Luis Pepe</vendor>
 
