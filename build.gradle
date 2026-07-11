@@ -7,16 +7,15 @@
 
 plugins {
     id 'java'
-    id 'org.jetbrains.intellij.platform' version '2.14.0'
+    id 'org.jetbrains.intellij.platform' version '2.18.1'
     id 'jacoco'
 }
 
-group = 'com.projectsapo'
-version = '1.1.3.2'
+group = 'com.LuisPPB16'
+version = '1.0.0'
 
 repositories {
     mavenCentral()
-    maven { url = 'https://repo.gradle.org/gradle/libs-releases' }
     intellijPlatform {
         defaultRepositories()
     }
@@ -24,8 +23,8 @@ repositories {
 
 dependencies {
     // Lombok
-    compileOnly 'org.projectlombok:lombok:1.18.36'
-    annotationProcessor 'org.projectlombok:lombok:1.18.36'
+    compileOnly 'org.projectlombok:lombok:1.18.42'
+    annotationProcessor 'org.projectlombok:lombok:1.18.42'
 
     // SAST - JavaParser
     implementation 'com.github.javaparser:javaparser-core:3.26.2'
@@ -40,10 +39,15 @@ dependencies {
     testImplementation 'junit:junit:4.13.2'
     testImplementation 'org.junit.jupiter:junit-jupiter:5.11.0'
     testImplementation 'org.mockito:mockito-core:5.11.0'
-    testImplementation 'org.mockito:mockito-inline:5.2.0'
     testImplementation 'org.mockito:mockito-junit-jupiter:5.11.0'
     testImplementation 'org.assertj:assertj-core:3.27.7'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+
+    constraints {
+        testImplementation('org.apache.commons:commons-compress:1.28.0') {
+            because 'avoid CVEs in the transitive test classpath'
+        }
+    }
 
     intellijPlatform {
         intellijIdeaCommunity '2025.1'
@@ -60,42 +64,55 @@ java {
 }
 
 tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+    options.release = 21
     options.compilerArgs << "-Xlint:all" << "-Werror" << "-Xlint:-processing" << "-Xlint:-unchecked"
 }
 
-test {
-    useJUnitPlatform()
-}
-
-sourceSets {
-    integrationTest {
-        java.srcDir 'src/integrationTest/java'
-        resources.srcDir 'src/integrationTest/resources'
-        compileClasspath += sourceSets.main.output + configurations.integrationTestCompileClasspath
-        runtimeClasspath += output + configurations.integrationTestRuntimeClasspath
-    }
-}
-
-configurations {
-    integrationTestImplementation.extendsFrom testImplementation
-    integrationTestRuntimeOnly.extendsFrom testRuntimeOnly
-}
-
-task integrationTest(type: Test) {
-    description = 'Runs integration tests.'
-    group = 'verification'
-    testClassesDirs = sourceSets.integrationTest.output.classesDirs
-    classpath = sourceSets.integrationTest.runtimeClasspath
-    useJUnitPlatform()
-    systemProperty 'java.awt.headless', 'true'
-    systemProperty 'idea.home.path', intellijPlatform.platformPath
-    systemProperty 'idea.skip.indices.initialization', 'true'
-}
-
 intellijPlatform {
+    buildSearchableOptions = false
+
+    signing {
+        certificateChain.set(providers.environmentVariable("CERTIFICATE_CHAIN"))
+        privateKey.set(providers.environmentVariable("PRIVATE_KEY"))
+        password.set(providers.environmentVariable("PRIVATE_KEY_PASSWORD"))
+    }
+
+    publishing {
+        token.set(providers.environmentVariable("PUBLISH_TOKEN"))
+    }
+
     pluginVerification {
         ides {
             recommended()
         }
     }
+}
+
+test {
+    useJUnitPlatform()
+    testLogging {
+        events "passed", "skipped", "failed"
+    }
+    maxHeapSize = '512m'
+    jvmArgs('-Xshare:off')
+    javaLauncher = javaToolchains.launcherFor {
+        languageVersion = JavaLanguageVersion.of(21)
+    }
+}
+
+jacocoTestReport {
+    dependsOn test
+    reports {
+        xml.required = true
+        html.required = true
+    }
+}
+
+tasks.named('buildSearchableOptions') {
+    enabled = false
+}
+
+tasks.named('jarSearchableOptions') {
+    enabled = false
 }

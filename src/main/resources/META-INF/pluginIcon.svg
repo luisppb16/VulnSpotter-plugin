@@ -6,48 +6,45 @@
   -->
 
 <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 40 40">
-    <!-- Back Left Leg -->
-    <path d="M12 28 Q 4 25 4 32 Q 4 38 14 38" fill="#388E3C"/>
-    <!-- Back Right Leg -->
-    <path d="M28 28 Q 36 25 36 32 Q 36 38 26 38" fill="#388E3C"/>
+    <!-- Lens glass -->
+    <circle cx="17" cy="17" r="11" fill="#E8F1FB"/>
 
-    <!-- Main Body -->
-    <path d="M10 38 L 30 38 Q 34 38 32 25 Q 30 12 20 12 Q 10 12 8 25 Q 6 38 10 38" fill="#4CAF50"/>
+    <!-- Bug discovered under the lens -->
+    <g>
+        <!-- Antennae -->
+        <path d="M15 11.6 Q14.2 9.6 12.6 9" stroke="#C62828" stroke-width="1.2" fill="none" stroke-linecap="round"/>
+        <path d="M19 11.6 Q19.8 9.6 21.4 9" stroke="#C62828" stroke-width="1.2" fill="none" stroke-linecap="round"/>
 
-    <!-- Belly -->
-    <ellipse cx="20" cy="28" rx="7" ry="6" fill="#DCEDC8"/>
+        <!-- Legs -->
+        <path d="M12.4 15 L9.6 13.4" stroke="#C62828" stroke-width="1.4" stroke-linecap="round"/>
+        <path d="M12.2 18 L9 18" stroke="#C62828" stroke-width="1.4" stroke-linecap="round"/>
+        <path d="M12.4 21 L9.6 22.6" stroke="#C62828" stroke-width="1.4" stroke-linecap="round"/>
+        <path d="M21.6 15 L24.4 13.4" stroke="#C62828" stroke-width="1.4" stroke-linecap="round"/>
+        <path d="M21.8 18 L25 18" stroke="#C62828" stroke-width="1.4" stroke-linecap="round"/>
+        <path d="M21.6 21 L24.4 22.6" stroke="#C62828" stroke-width="1.4" stroke-linecap="round"/>
 
-    <!-- Front Legs -->
-    <path d="M16 28 L 16 38" stroke="#388E3C" stroke-width="2" stroke-linecap="round"/>
-    <path d="M24 28 L 24 38" stroke="#388E3C" stroke-width="2" stroke-linecap="round"/>
-    <path d="M14 38 L 18 38" stroke="#388E3C" stroke-width="2" stroke-linecap="round"/> <!-- Left Foot -->
-    <path d="M22 38 L 26 38" stroke="#388E3C" stroke-width="2" stroke-linecap="round"/> <!-- Right Foot -->
+        <!-- Head -->
+        <circle cx="17" cy="12.6" r="2.2" fill="#C62828"/>
 
-    <!-- Eyes (Bulging) -->
-    <circle cx="14" cy="12" r="4" fill="#4CAF50"/>
-    <circle cx="26" cy="12" r="4" fill="#4CAF50"/>
+        <!-- Body -->
+        <ellipse cx="17" cy="18.2" rx="4.8" ry="5.6" fill="#E53935"/>
 
-    <!-- Sclera -->
-    <circle cx="14" cy="12" r="2.5" fill="#FFFFFF"/>
-    <circle cx="26" cy="12" r="2.5" fill="#FFFFFF"/>
+        <!-- Wing split -->
+        <path d="M17 13.8 L17 23.4" stroke="#B71C1C" stroke-width="1" stroke-linecap="round"/>
 
-    <!-- Pupils -->
-    <circle cx="14" cy="12" r="1" fill="#000000"/>
-    <circle cx="26" cy="12" r="1" fill="#000000"/>
-
-    <!-- Mouth -->
-    <path d="M16 18 Q 20 20 24 18" stroke="#2E7D32" stroke-width="1" fill="none"/>
-
-    <!-- Tongue (Natural Curve & Tapered) -->
-    <path d="M20 18 C 22 16, 28 12, 36 4" stroke="#F06292" stroke-width="2" fill="none" stroke-linecap="round"/>
-    <!-- Sticky tip -->
-    <circle cx="36" cy="4" r="1.2" fill="#F06292"/>
-
-    <!-- Broken Security Shield (Symbolizing Vulnerability) -->
-    <g transform="translate(33, 1)">
-        <!-- Shield Body -->
-        <path d="M 0 0 L 6 0 L 6 2 C 6 5 3 7 3 7 C 3 7 0 5 0 2 L 0 0 Z" fill="#E53935"/>
-        <!-- Crack -->
-        <path d="M 3 0 L 2 2 L 4 4 L 3 7" stroke="#FFFFFF" stroke-width="0.8" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+        <!-- Spots -->
+        <circle cx="15" cy="16.6" r="0.9" fill="#B71C1C"/>
+        <circle cx="19" cy="16.6" r="0.9" fill="#B71C1C"/>
+        <circle cx="15.4" cy="20.4" r="0.9" fill="#B71C1C"/>
+        <circle cx="18.6" cy="20.4" r="0.9" fill="#B71C1C"/>
     </g>
+
+    <!-- Glass highlight -->
+    <path d="M10.4 13.2 A 8.6 8.6 0 0 1 13.2 10.4" stroke="#FFFFFF" stroke-width="1.6" fill="none" stroke-linecap="round" opacity="0.75"/>
+
+    <!-- Lens ring -->
+    <circle cx="17" cy="17" r="11" fill="none" stroke="#2E3A59" stroke-width="3"/>
+
+    <!-- Handle -->
+    <path d="M25.2 25.2 L34.4 34.4" stroke="#2E3A59" stroke-width="5" stroke-linecap="round"/>
 </svg>

@@ -5,4 +5,4 @@
  * *****************************************************************************
  */
 
-rootProject.name = 'VulnSpotter'
+rootProject.name = 'vulnspotter-plugin'

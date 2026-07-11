@@ -1,0 +1,50 @@
+<!--
+  - ******************************************************************************
+  - Copyright (c)  2026 Luis Paolo Pepe Barra (@LuisPPB16).
+  - All rights reserved.
+  - ******************************************************************************
+  -->
+
+<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 40 40">
+    <!-- Lens glass -->
+    <circle cx="17" cy="17" r="11" fill="#243144"/>
+
+    <!-- Bug discovered under the lens -->
+    <g>
+        <!-- Antennae -->
+        <path d="M15 11.6 Q14.2 9.6 12.6 9" stroke="#EF5350" stroke-width="1.2" fill="none" stroke-linecap="round"/>
+        <path d="M19 11.6 Q19.8 9.6 21.4 9" stroke="#EF5350" stroke-width="1.2" fill="none" stroke-linecap="round"/>
+
+        <!-- Legs -->
+        <path d="M12.4 15 L9.6 13.4" stroke="#EF5350" stroke-width="1.4" stroke-linecap="round"/>
+        <path d="M12.2 18 L9 18" stroke="#EF5350" stroke-width="1.4" stroke-linecap="round"/>
+        <path d="M12.4 21 L9.6 22.6" stroke="#EF5350" stroke-width="1.4" stroke-linecap="round"/>
+        <path d="M21.6 15 L24.4 13.4" stroke="#EF5350" stroke-width="1.4" stroke-linecap="round"/>
+        <path d="M21.8 18 L25 18" stroke="#EF5350" stroke-width="1.4" stroke-linecap="round"/>
+        <path d="M21.6 21 L24.4 22.6" stroke="#EF5350" stroke-width="1.4" stroke-linecap="round"/>
+
+        <!-- Head -->
+        <circle cx="17" cy="12.6" r="2.2" fill="#EF5350"/>
+
+        <!-- Body -->
+        <ellipse cx="17" cy="18.2" rx="4.8" ry="5.6" fill="#F1564F"/>
+
+        <!-- Wing split -->
+        <path d="M17 13.8 L17 23.4" stroke="#C62828" stroke-width="1" stroke-linecap="round"/>
+
+        <!-- Spots -->
+        <circle cx="15" cy="16.6" r="0.9" fill="#C62828"/>
+        <circle cx="19" cy="16.6" r="0.9" fill="#C62828"/>
+        <circle cx="15.4" cy="20.4" r="0.9" fill="#C62828"/>
+        <circle cx="18.6" cy="20.4" r="0.9" fill="#C62828"/>
+    </g>
+
+    <!-- Glass highlight -->
+    <path d="M10.4 13.2 A 8.6 8.6 0 0 1 13.2 10.4" stroke="#FFFFFF" stroke-width="1.6" fill="none" stroke-linecap="round" opacity="0.35"/>
+
+    <!-- Lens ring -->
+    <circle cx="17" cy="17" r="11" fill="none" stroke="#AEBBD6" stroke-width="3"/>
+
+    <!-- Handle -->
+    <path d="M25.2 25.2 L34.4 34.4" stroke="#AEBBD6" stroke-width="5" stroke-linecap="round"/>
+</svg>

@@ -7,9 +7,9 @@
 
 <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 13 13">
     <!-- Lens -->
-    <circle cx="5.4" cy="5.4" r="3.7" fill="none" stroke="#6C707E" stroke-width="1.5"/>
+    <circle cx="5.4" cy="5.4" r="3.7" fill="none" stroke="#CED0D6" stroke-width="1.5"/>
     <!-- Handle -->
-    <path d="M8.3 8.3 L11.4 11.4" stroke="#6C707E" stroke-width="1.5" stroke-linecap="round"/>
+    <path d="M8.3 8.3 L11.4 11.4" stroke="#CED0D6" stroke-width="1.5" stroke-linecap="round"/>
     <!-- Bug under the lens -->
-    <circle cx="5.4" cy="5.4" r="1.5" fill="#6C707E"/>
+    <circle cx="5.4" cy="5.4" r="1.5" fill="#CED0D6"/>
 </svg>
