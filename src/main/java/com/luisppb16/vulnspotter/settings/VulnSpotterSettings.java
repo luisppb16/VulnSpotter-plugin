@@ -7,6 +7,7 @@
 
 package com.luisppb16.vulnspotter.settings;
 
+import com.intellij.openapi.application.Application;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.components.PersistentStateComponent;
 import com.intellij.openapi.components.State;
@@ -26,7 +27,8 @@ public class VulnSpotterSettings implements PersistentStateComponent<VulnSpotter
   private boolean autoScanOnSync = false;
 
   public static VulnSpotterSettings getInstance() {
-    return ApplicationManager.getApplication().getService(VulnSpotterSettings.class);
+    Application app = ApplicationManager.getApplication();
+    return app != null ? app.getService(VulnSpotterSettings.class) : null;
   }
 
   public int getCacheDurationMinutes() {

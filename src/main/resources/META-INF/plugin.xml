@@ -15,17 +15,19 @@
     <description><![CDATA[
     A smart vulnerability scanner for your project dependencies.
 
-    VulnSpotter integrates directly into your IDE to detect security vulnerabilities in your Gradle and Maven dependencies.
-    It leverages the OSV.dev database to provide real-time alerts and detailed remediation advice without leaving your workflow.
+    VulnSpotter integrates directly into your IDE to detect security vulnerabilities in your Gradle, Maven, npm, PyPI and Go dependencies.
+    It leverages the OSV.dev database to provide real-time alerts, in-editor highlighting and detailed remediation advice without leaving your workflow.
 
     <h2>Main Features</h2>
     <ul>
-        <li><b>Automated Scanning:</b> Detects vulnerabilities in Gradle and Maven projects automatically.</li>
+        <li><b>Automated Scanning:</b> Detects vulnerabilities in Gradle, Maven, npm (package-lock.json), PyPI (requirements.txt) and Go (go.mod) projects automatically, and re-scans after Gradle/Maven sync.</li>
+        <li><b>In-editor Highlighting:</b> Vulnerable dependencies are annotated directly in pom.xml and build.gradle with a one-click quick-fix that upgrades to the recommended fixed version.</li>
         <li><b>Real-time Alerts:</b> Get instant notifications about security risks in your dependencies.</li>
-        <li><b>Detailed Reports:</b> View comprehensive vulnerability details, including summaries, severity, and fixed versions.</li>
-        <li><b>Integrated Tool Window:</b> A dedicated "VulnSpotter" tool window for managing and reviewing scan results.</li>
+        <li><b>Detailed Reports:</b> View comprehensive vulnerability details, including summaries, CVSS severity, affected ranges and fixed versions, and export to HTML, PDF, CSV, JSON and SARIF.</li>
+        <li><b>Integrated Tool Window:</b> A dedicated "VulnSpotter" tool window for managing and reviewing scan results, with direct/transitive classification and search by package or CVE.</li>
         <li><b>Direct References:</b> One-click access to official security advisories (CVE, GHSA, etc.).</li>
         <li><b>Visual Indicators:</b> Clear visual cues for safe vs. vulnerable packages.</li>
+        <li><b>Exclusions:</b> Ignore specific dependencies or CVEs via a <code>.vulnspotterignore</code> file or the Settings page.</li>
     </ul>
     ]]></description>
 
@@ -33,20 +35,27 @@
         <h3>1.0.0</h3>
         <ul>
             <li><b>Initial Release:</b> First release of VulnSpotter on the JetBrains Marketplace.</li>
-            <li><b>Gradle &amp; Maven Scanning:</b> Scans project dependencies for known vulnerabilities using the OSV.dev database.</li>
-            <li><b>Tool Window:</b> Dedicated tool window with vulnerability details and report export to HTML, PDF, and CSV.</li>
+            <li><b>Multi-ecosystem Scanning:</b> Scans Gradle, Maven, npm, PyPI and Go dependencies for known vulnerabilities using the OSV.dev database, with automatic re-scan after Gradle and Maven sync.</li>
+            <li><b>In-editor Highlighting &amp; Quick-fix:</b> Vulnerable dependencies are annotated in pom.xml and build.gradle, with a one-click intention that upgrades to the recommended fixed version (and refuses to downgrade).</li>
+            <li><b>Tool Window:</b> Dedicated tool window with vulnerability details, direct/transitive classification, search by package or CVE, and report export to HTML, PDF, CSV, JSON and SARIF.</li>
+            <li><b>Settings:</b> Configurable minimum severity and ignored CVEs, persisted at the application level.</li>
             <li><b>Layered Architecture:</b> Codebase reorganized into a clean layered architecture.</li>
             <li><b>Exclusions:</b> Ignore specific dependencies via a <code>.vulnspotterignore</code> file.</li>
         </ul>
     ]]></change-notes>
 
     <depends>com.intellij.modules.platform</depends>
+    <depends>com.intellij.modules.xml</depends>
     <depends>org.jetbrains.idea.maven</depends>
     <depends>com.intellij.gradle</depends>
     <depends>org.intellij.groovy</depends>
 
     <extensions defaultExtensionNs="com.intellij">
         <applicationService serviceImplementation="com.luisppb16.vulnspotter.settings.VulnSpotterSettings"/>
+
+        <applicationConfigurable parentId="tools"
+                                 id="vulnspotter.settings"
+                                 instance="com.luisppb16.vulnspotter.settings.VulnSpotterConfigurable"/>
 
         <externalSystemTaskNotificationListener
                 implementation="com.luisppb16.vulnspotter.infrastructure.sync.ProjectSyncListener"/>
@@ -62,6 +71,11 @@
         <notificationGroup id="VulnSpotter Notifications"
                            displayType="BALLOON"/>
     </extensions>
+
+    <projectListeners>
+        <listener class="com.luisppb16.vulnspotter.infrastructure.sync.MavenSyncListener"
+                  topic="org.jetbrains.idea.maven.project.MavenImportListener"/>
+    </projectListeners>
 
     <actions>
         <action id="VulnSpotter.CheckVulnerabilities"

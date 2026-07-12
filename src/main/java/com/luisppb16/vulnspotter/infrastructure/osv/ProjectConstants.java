@@ -19,6 +19,9 @@ public final class ProjectConstants {
   /** The URL for the OSV.dev API Batch Endpoint. */
   public static final String OSV_API_BATCH_URL = "https://api.osv.dev/v1/querybatch";
 
+  /** Base URL for fetching a full vulnerability record by id (append the id). */
+  public static final String OSV_API_VULNS_URL = "https://api.osv.dev/v1/vulns/";
+
   /** Private constructor to prevent instantiation. */
   private ProjectConstants() {
     throw new UnsupportedOperationException("This is a utility class and cannot be instantiated");

@@ -48,10 +48,12 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.MockedStatic;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.mockito.junit.jupiter.MockitoSettings;
+import org.mockito.quality.Strictness;
 
 @ExtendWith(MockitoExtension.class)
 @DisplayName("DependencyParser Test Suite")
-@org.mockito.junit.jupiter.MockitoSettings(strictness = org.mockito.quality.Strictness.LENIENT)
+@MockitoSettings(strictness = Strictness.LENIENT)
 class DependencyParserTest {
 
   @Mock private Project project;
@@ -195,9 +197,11 @@ class DependencyParserTest {
     }
 
     @Test
-    @DisplayName("should_parse_jar_filename_correctly")
-    void shouldParseJarFilename() {
-      // Given
+    @DisplayName("should_skip_jar_filename_without_maven_coordinates")
+    void shouldSkipJarFilenameWithoutMavenCoordinates() {
+      // Given: a bare jar filename yields only the artifactId, but OSV's Maven ecosystem requires
+      // "group:artifact" — querying with just the artifact name is a silent false negative, so the
+      // parser must skip it instead of emitting a package.
       when(mavenProjectsManager.hasProjects()).thenReturn(false);
       when(projectDataManager.getExternalProjectsData(any(), any(ProjectSystemId.class)))
           .thenReturn(Collections.emptyList());
@@ -205,7 +209,6 @@ class DependencyParserTest {
       when(libraryTablesRegistrar.getLibraryTable(project)).thenReturn(libraryTable);
 
       Library library = mock(Library.class);
-      when(library.getName()).thenReturn("InvalidName"); // Force file fallback
       when(library.getName()).thenReturn("InvalidName"); // Force file fallback
 
       VirtualFile file = mock(VirtualFile.class);
@@ -219,9 +222,7 @@ class DependencyParserTest {
       List<OsvPackage> results = DependencyParser.parseDependencies(project);
 
       // Then
-      assertThat(results).hasSize(1);
-      assertThat(results.get(0).name()).isEqualTo("commons-lang3");
-      assertThat(results.get(0).version()).isEqualTo("3.12.0");
+      assertThat(results).isEmpty();
     }
 
     @Test

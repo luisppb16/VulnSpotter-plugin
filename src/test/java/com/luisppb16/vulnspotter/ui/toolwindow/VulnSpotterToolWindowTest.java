@@ -11,11 +11,14 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
+import com.intellij.openapi.Disposable;
 import com.intellij.openapi.application.Application;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.application.ModalityState;
 import com.intellij.openapi.project.Project;
-import com.intellij.ui.jcef.JBCefBrowser;
+import com.intellij.ui.jcef.JBCefApp;
+import com.intellij.util.messages.MessageBus;
+import com.intellij.util.messages.MessageBusConnection;
 import com.luisppb16.vulnspotter.domain.model.OsvPackage;
 import com.luisppb16.vulnspotter.application.service.VulnerabilityScannerService;
 import java.awt.Component;
@@ -27,7 +30,6 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
-import org.mockito.MockedConstruction;
 import org.mockito.MockedStatic;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
@@ -41,11 +43,12 @@ class VulnSpotterToolWindowTest {
   @Mock private VulnerabilityScannerService scannerService;
   @Mock private Application application;
   @Mock private ModalityState modalityState;
+  @Mock private MessageBus messageBus;
+  @Mock private MessageBusConnection messageBusConnection;
 
   private MockedStatic<VulnerabilityScannerService> scannerServiceMock;
   private MockedStatic<ApplicationManager> applicationManagerMock;
   private MockedStatic<ModalityState> modalityStateMock;
-  private MockedConstruction<JBCefBrowser> jbCefBrowserMockedConstruction;
 
   private VulnSpotterToolWindow vulnSpotterToolWindow;
 
@@ -59,6 +62,10 @@ class VulnSpotterToolWindowTest {
         .when(() -> VulnerabilityScannerService.getInstance(project))
         .thenReturn(scannerService);
     applicationManagerMock.when(ApplicationManager::getApplication).thenReturn(application);
+    // The constructor subscribes to LafManagerListener via the application message bus; stub it so
+    // the tool window can be built without a running application.
+    when(application.getMessageBus()).thenReturn(messageBus);
+    when(messageBus.connect(any(Disposable.class))).thenReturn(messageBusConnection);
     modalityStateMock.when(ModalityState::defaultModalityState).thenReturn(modalityState);
 
     // Mock invokeLater to run immediately
@@ -71,23 +78,19 @@ class VulnSpotterToolWindowTest {
         .when(application)
         .invokeLater(any(Runnable.class));
 
-    // Mock JBCefBrowser construction to avoid native library loading issues in tests
-    jbCefBrowserMockedConstruction =
-        mockConstruction(
-            JBCefBrowser.class,
-            (mock, context) -> {
-              when(mock.getComponent()).thenReturn(new JPanel());
-            });
+    // Force the Swing fallback so JCEF's static initializer (which needs the application registry)
+    // is never loaded under the mock application.
+    VulnSpotterToolWindow.jcefSupported = () -> false;
 
     vulnSpotterToolWindow = new VulnSpotterToolWindow(project);
   }
 
   @AfterEach
   void tearDown() {
+    VulnSpotterToolWindow.jcefSupported = JBCefApp::isSupported;
     scannerServiceMock.close();
     applicationManagerMock.close();
     modalityStateMock.close();
-    jbCefBrowserMockedConstruction.close();
   }
 
   @Test

@@ -11,7 +11,7 @@ plugins {
     id 'jacoco'
 }
 
-group = 'com.LuisPPB16'
+group = 'com.luisppb16'
 version = '1.0.0'
 
 repositories {
@@ -26,16 +26,18 @@ dependencies {
     compileOnly 'org.projectlombok:lombok:1.18.42'
     annotationProcessor 'org.projectlombok:lombok:1.18.42'
 
-    // SAST - JavaParser
-    implementation 'com.github.javaparser:javaparser-core:3.26.2'
-
     // JSON - Jackson
     implementation 'com.fasterxml.jackson.core:jackson-databind:2.21.1'
+
+    // CVSS base-score calculation from OSV severity vectors (v2/v3/v3.1/v4)
+    implementation 'us.springett:cvss-calculator:1.5.1'
 
     // Report export (HTML -> PDF)
     implementation 'com.openhtmltopdf:openhtmltopdf-pdfbox:1.0.10'
 
     // Testing
+    // JUnit 4 is kept on the test classpath because the IntelliJ Platform test framework
+    // (used via the bundled test infrastructure) references org.junit.rules.TestRule at runtime.
     testImplementation 'junit:junit:4.13.2'
     testImplementation 'org.junit.jupiter:junit-jupiter:5.11.0'
     testImplementation 'org.mockito:mockito-core:5.11.0'
@@ -44,6 +46,12 @@ dependencies {
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 
     constraints {
+        implementation('org.apache.pdfbox:pdfbox:2.0.31') {
+            because 'openhtmltopdf 1.0.10 pulls pdfbox 2.0.24 which has known CVEs'
+        }
+        implementation('org.apache.pdfbox:xmpbox:2.0.31') {
+            because 'keep the whole pdfbox family aligned with the pdfbox 2.0.31 upgrade'
+        }
         testImplementation('org.apache.commons:commons-compress:1.28.0') {
             because 'avoid CVEs in the transitive test classpath'
         }
@@ -109,10 +117,11 @@ jacocoTestReport {
     }
 }
 
-tasks.named('buildSearchableOptions') {
-    enabled = false
-}
-
-tasks.named('jarSearchableOptions') {
-    enabled = false
+// These tasks come from the IntelliJ Platform plugin; guard with findByName so the build script
+// does not fail in environments where they are not registered.
+['buildSearchableOptions', 'jarSearchableOptions'].each { name ->
+    def task = tasks.findByName(name)
+    if (task != null) {
+        task.enabled = false
+    }
 }
