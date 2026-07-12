@@ -24,11 +24,11 @@ import java.util.regex.Pattern;
 /**
  * Parses the project's {@code .vulnspotterignore} file.
  *
- * <p>Each non-comment line is a pattern matched against the package name (e.g. {@code
- * com.foo:bar}) or against {@code ecosystem:name} (e.g. {@code Maven:com.foo:bar}). A {@code *}
- * wildcard matches any sequence, so {@code com.foo:*} ignores every artifact of that group. A
- * specific installed version can be ignored with {@code name@version} or {@code
- * ecosystem:name@version} (e.g. {@code Maven:com.foo:bar@1.2.3}).
+ * <p>Each non-comment line is a pattern matched against the package name (e.g. {@code com.foo:bar})
+ * or against {@code ecosystem:name} (e.g. {@code Maven:com.foo:bar}). A {@code *} wildcard matches
+ * any sequence, so {@code com.foo:*} ignores every artifact of that group. A specific installed
+ * version can be ignored with {@code name@version} or {@code ecosystem:name@version} (e.g. {@code
+ * Maven:com.foo:bar@1.2.3}).
  *
  * <p>Matching is case-sensitive for ecosystems whose names are case-sensitive (Maven {@code
  * group:artifact}, Go module paths) and case-insensitive for npm/PyPI, where package names are

@@ -33,6 +33,31 @@ public class DependencyAnnotator implements Annotator {
 
   private static final SeverityAnalyzer SEVERITY_ANALYZER = new SeverityAnalyzer();
 
+  private static String stripQuotes(String text) {
+    if (text.length() >= 6 && text.startsWith("'''") && text.endsWith("'''")) {
+      return text.substring(3, text.length() - 3);
+    }
+    if (text.length() >= 6 && text.startsWith("\"\"\"") && text.endsWith("\"\"\"")) {
+      return text.substring(3, text.length() - 3);
+    }
+    if (text.length() >= 2 && text.startsWith("'") && text.endsWith("'")) {
+      return text.substring(1, text.length() - 1);
+    }
+    if (text.length() >= 2 && text.startsWith("\"") && text.endsWith("\"")) {
+      return text.substring(1, text.length() - 1);
+    }
+    return text;
+  }
+
+  private static HighlightSeverity severityFor(String highest) {
+    return switch (highest == null ? "" : highest) {
+      case SeverityAnalyzer.CRITICAL, SeverityAnalyzer.HIGH -> HighlightSeverity.ERROR;
+      case SeverityAnalyzer.MEDIUM -> HighlightSeverity.WARNING;
+      case SeverityAnalyzer.LOW -> HighlightSeverity.INFORMATION;
+      default -> HighlightSeverity.WEAK_WARNING;
+    };
+  }
+
   @Override
   public void annotate(@NotNull PsiElement element, @NotNull AnnotationHolder holder) {
     PsiFile file = element.getContainingFile();
@@ -92,7 +117,8 @@ public class DependencyAnnotator implements Annotator {
     TextRange anchor;
     if (versionTag != null) {
       TextRange valueRange = versionTag.getValue().getTextRange();
-      anchor = (valueRange != null && !valueRange.isEmpty()) ? valueRange : versionTag.getTextRange();
+      anchor =
+          (valueRange != null && !valueRange.isEmpty()) ? valueRange : versionTag.getTextRange();
     } else {
       anchor = artifactTag.getTextRange();
     }
@@ -132,22 +158,6 @@ public class DependencyAnnotator implements Annotator {
     createAnnotation(holder, element.getTextRange(), result);
   }
 
-  private static String stripQuotes(String text) {
-    if (text.length() >= 6 && text.startsWith("'''") && text.endsWith("'''")) {
-      return text.substring(3, text.length() - 3);
-    }
-    if (text.length() >= 6 && text.startsWith("\"\"\"") && text.endsWith("\"\"\"")) {
-      return text.substring(3, text.length() - 3);
-    }
-    if (text.length() >= 2 && text.startsWith("'") && text.endsWith("'")) {
-      return text.substring(1, text.length() - 1);
-    }
-    if (text.length() >= 2 && text.startsWith("\"") && text.endsWith("\"")) {
-      return text.substring(1, text.length() - 1);
-    }
-    return text;
-  }
-
   private void createAnnotation(
       AnnotationHolder holder, TextRange anchor, VulnerabilityScannerService.ScanResult result) {
     int count = result.vulnerabilities().size();
@@ -175,14 +185,5 @@ public class DependencyAnnotator implements Annotator {
               new UpdateDependencyQuickFix(result.pkg().name(), result.pkg().version(), fix));
     }
     builder.create();
-  }
-
-  private static HighlightSeverity severityFor(String highest) {
-    return switch (highest == null ? "" : highest) {
-      case SeverityAnalyzer.CRITICAL, SeverityAnalyzer.HIGH -> HighlightSeverity.ERROR;
-      case SeverityAnalyzer.MEDIUM -> HighlightSeverity.WARNING;
-      case SeverityAnalyzer.LOW -> HighlightSeverity.INFORMATION;
-      default -> HighlightSeverity.WEAK_WARNING;
-    };
   }
 }

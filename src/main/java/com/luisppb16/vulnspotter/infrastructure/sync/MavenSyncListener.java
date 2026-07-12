@@ -18,8 +18,8 @@ import org.jetbrains.idea.maven.project.MavenProject;
 
 /**
  * Triggers an automatic scan after a Maven re-import. Gradle syncs are covered by {@link
- * ProjectSyncListener}; Maven does not go through the External System pipeline, so it needs its
- * own listener.
+ * ProjectSyncListener}; Maven does not go through the External System pipeline, so it needs its own
+ * listener.
  */
 public class MavenSyncListener implements MavenImportListener {
 

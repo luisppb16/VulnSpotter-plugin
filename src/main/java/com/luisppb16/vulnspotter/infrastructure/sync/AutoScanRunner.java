@@ -15,8 +15,8 @@ import com.luisppb16.vulnspotter.application.service.VulnerabilityScannerService
 
 /**
  * Shared logic for auto-scans triggered by project sync (Gradle or Maven): runs the scan, stores
- * the results (which also refreshes editor annotations) and notifies the user when
- * vulnerabilities are found.
+ * the results (which also refreshes editor annotations) and notifies the user when vulnerabilities
+ * are found.
  */
 final class AutoScanRunner {
 

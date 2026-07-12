@@ -22,8 +22,8 @@ public final class VersionUtil {
   private VersionUtil() {}
 
   /**
-   * Finds the best fixed version from a list of fixed versions, given the current version. The
-   * best fixed version is the smallest version that is strictly greater than the current version,
+   * Finds the best fixed version from a list of fixed versions, given the current version. The best
+   * fixed version is the smallest version that is strictly greater than the current version,
    * ideally in the same major branch. Stable (non-pre-release) versions are always preferred over
    * pre-release ones (alpha/beta/milestone/rc/snapshot) so the user is never told to upgrade to an
    * alpha when a stable fix exists.
@@ -155,7 +155,8 @@ public final class VersionUtil {
       } else {
         // Separator ('.', '-', '_', '+', etc.)
         if (!token.isEmpty()) {
-          items.add(digits ? new BigInteger(token.toString()) : normalizeQualifier(token.toString()));
+          items.add(
+              digits ? new BigInteger(token.toString()) : normalizeQualifier(token.toString()));
           token.setLength(0);
         }
         digits = false;

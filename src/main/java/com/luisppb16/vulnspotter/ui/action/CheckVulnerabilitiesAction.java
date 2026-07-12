@@ -57,7 +57,8 @@ public class CheckVulnerabilitiesAction extends AnAction {
     toolWindow.show(
         () -> {
           ContentManager cm = toolWindow.getContentManager();
-          // The tool window may expose several contents; find the one carrying our panel rather than
+          // The tool window may expose several contents; find the one carrying our panel rather
+          // than
           // assuming it lives at index 0.
           VulnSpotterToolWindow panel = null;
           for (Content content : cm.getContents()) {

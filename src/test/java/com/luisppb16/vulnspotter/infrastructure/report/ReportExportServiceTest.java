@@ -29,6 +29,45 @@ class ReportExportServiceTest {
 
   @TempDir Path tempDir;
 
+  /** One vulnerable Maven dependency (with a real fixed range) plus one clean dependency. */
+  private static List<ScanResult> sampleResults() {
+    OsvVulnerability vuln =
+        new OsvVulnerability(
+            "GHSA-test-1234",
+            "Deserialization of untrusted data",
+            "details",
+            List.of("CVE-2024-0001"),
+            null,
+            null,
+            null,
+            List.of(
+                new OsvVulnerability.Severity(
+                    "CVSS_V3", "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H")),
+            List.of(
+                new OsvVulnerability.Affected(
+                    new OsvVulnerability.Package(
+                        "com.fasterxml.jackson.core:jackson-databind", "Maven", null),
+                    List.of(
+                        new OsvVulnerability.Range(
+                            "ECOSYSTEM",
+                            List.of(
+                                new OsvVulnerability.Event("0", null),
+                                new OsvVulnerability.Event(null, "2.9.10")))),
+                    null,
+                    Map.of())),
+            Collections.emptyList(),
+            Collections.emptyMap());
+
+    ScanResult vulnerable =
+        new ScanResult(
+            new OsvPackage("com.fasterxml.jackson.core:jackson-databind", "Maven", "2.9.0"),
+            true,
+            List.of(vuln));
+    ScanResult clean =
+        new ScanResult(new OsvPackage("org.safe:library", "Maven", "1.0.0"), false, List.of());
+    return List.of(vulnerable, clean);
+  }
+
   @Test
   void exportsHtmlAndPdfFiles() throws Exception {
     String html = "<html><body><h1>Report</h1><p>content</p></body></html>";
@@ -83,8 +122,7 @@ class ReportExportServiceTest {
             List.of(),
             List.of(),
             Map.of());
-    ScanResult result =
-        new ScanResult(new OsvPackage("g:a", "Maven", "1.0"), true, List.of(vuln));
+    ScanResult result = new ScanResult(new OsvPackage("g:a", "Maven", "1.0"), true, List.of(vuln));
     Path csvPath = tempDir.resolve("inject.csv");
 
     ReportExportService.exportCsv(List.of(result), csvPath);
@@ -167,44 +205,5 @@ class ReportExportServiceTest {
         .contains("Recommended fix: **2.9.10**")
         .contains("[GHSA-test-1234](https://osv.dev/vulnerability/GHSA-test-1234)")
         .contains("CRITICAL");
-  }
-
-  /** One vulnerable Maven dependency (with a real fixed range) plus one clean dependency. */
-  private static List<ScanResult> sampleResults() {
-    OsvVulnerability vuln =
-        new OsvVulnerability(
-            "GHSA-test-1234",
-            "Deserialization of untrusted data",
-            "details",
-            List.of("CVE-2024-0001"),
-            null,
-            null,
-            null,
-            List.of(
-                new OsvVulnerability.Severity(
-                    "CVSS_V3", "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H")),
-            List.of(
-                new OsvVulnerability.Affected(
-                    new OsvVulnerability.Package(
-                        "com.fasterxml.jackson.core:jackson-databind", "Maven", null),
-                    List.of(
-                        new OsvVulnerability.Range(
-                            "ECOSYSTEM",
-                            List.of(
-                                new OsvVulnerability.Event("0", null),
-                                new OsvVulnerability.Event(null, "2.9.10")))),
-                    null,
-                    Map.of())),
-            Collections.emptyList(),
-            Collections.emptyMap());
-
-    ScanResult vulnerable =
-        new ScanResult(
-            new OsvPackage("com.fasterxml.jackson.core:jackson-databind", "Maven", "2.9.0"),
-            true,
-            List.of(vuln));
-    ScanResult clean =
-        new ScanResult(new OsvPackage("org.safe:library", "Maven", "1.0.0"), false, List.of());
-    return List.of(vulnerable, clean);
   }
 }

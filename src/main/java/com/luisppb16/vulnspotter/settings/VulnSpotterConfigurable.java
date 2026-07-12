@@ -43,8 +43,7 @@ public class VulnSpotterConfigurable implements Configurable {
   public @Nullable JComponent createComponent() {
     autoScanCheckBox = new JBCheckBox("Automatically scan after project sync");
     cacheSpinner = new JSpinner(new SpinnerNumberModel(60, 5, 24 * 60, 5));
-    minimumSeverityCombo =
-        new JComboBox<>(new String[] {"LOW", "MEDIUM", "HIGH", "CRITICAL"});
+    minimumSeverityCombo = new JComboBox<>(new String[] {"LOW", "MEDIUM", "HIGH", "CRITICAL"});
     ignoredCvesArea = new JBTextArea(6, 40);
     JBScrollPane ignoredScroll = new JBScrollPane(ignoredCvesArea);
 

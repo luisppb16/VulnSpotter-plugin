@@ -175,8 +175,7 @@ class SeverityAnalyzerTest {
                 new OsvVulnerability.Severity(
                     "CVSS_V3", "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H"),
                 new OsvVulnerability.Severity(
-                    "CVSS_V4",
-                    "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:L/VI:N/VA:N/SC:N/SI:N/SA:N")),
+                    "CVSS_V4", "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:L/VI:N/VA:N/SC:N/SI:N/SA:N")),
             Collections.emptyList(),
             Collections.emptyList(),
             Collections.emptyMap());

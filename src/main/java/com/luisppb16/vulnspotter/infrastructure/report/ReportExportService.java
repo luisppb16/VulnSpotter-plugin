@@ -70,7 +70,8 @@ public final class ReportExportService {
       throws IOException {
     List<VulnerabilityScannerService.ScanResult> results =
         scanResults == null ? List.of() : scanResults;
-    long vulnerableDeps = results.stream().filter(VulnerabilityScannerService.ScanResult::vulnerable).count();
+    long vulnerableDeps =
+        results.stream().filter(VulnerabilityScannerService.ScanResult::vulnerable).count();
     long totalVulns =
         results.stream()
             .filter(VulnerabilityScannerService.ScanResult::vulnerable)
@@ -139,8 +140,8 @@ public final class ReportExportService {
   }
 
   /**
-   * CSV with one row per (dependency, vulnerability) so each finding is independently triageable.
-   * A UTF-8 BOM is prepended so Excel opens it with the right encoding, and formula-injection
+   * CSV with one row per (dependency, vulnerability) so each finding is independently triageable. A
+   * UTF-8 BOM is prepended so Excel opens it with the right encoding, and formula-injection
    * characters are neutralized.
    */
   public static void exportCsv(
@@ -178,7 +179,8 @@ public final class ReportExportService {
                 : vuln.aliases().stream()
                     .filter(a -> a != null && a.toUpperCase(Locale.ROOT).startsWith("CVE-"))
                     .collect(Collectors.joining(" "));
-        String ranges = String.join("; ", FixedVersionResolver.affectedRanges(vuln, sr.pkg().name()));
+        String ranges =
+            String.join("; ", FixedVersionResolver.affectedRanges(vuln, sr.pkg().name()));
         csv.append(csvField(sr.pkg().name()))
             .append(',')
             .append(csvField(sr.pkg().version()))
@@ -206,8 +208,8 @@ public final class ReportExportService {
   }
 
   /**
-   * Quotes a CSV field and neutralizes spreadsheet formula injection (fields starting with =, +,
-   * - or @ are prefixed with a single quote).
+   * Quotes a CSV field and neutralizes spreadsheet formula injection (fields starting with =, +, -
+   * or @ are prefixed with a single quote).
    */
   private static String csvField(String value) {
     String v = value == null ? "" : value;
@@ -285,8 +287,7 @@ public final class ReportExportService {
         properties.put("package", sr.pkg().name());
         properties.put("installedVersion", sr.pkg().version());
         properties.put("ecosystem", sr.pkg().ecosystem());
-        FixedVersionResolver.recommendUpgrade(
-                List.of(vuln), sr.pkg().name(), sr.pkg().version())
+        FixedVersionResolver.recommendUpgrade(List.of(vuln), sr.pkg().name(), sr.pkg().version())
             .ifPresent(fix -> properties.put("recommendedFix", fix));
         List<String> ranges = FixedVersionResolver.affectedRanges(vuln, sr.pkg().name());
         if (!ranges.isEmpty()) {
@@ -308,7 +309,8 @@ public final class ReportExportService {
       throws IOException {
     List<VulnerabilityScannerService.ScanResult> results =
         scanResults == null ? List.of() : scanResults;
-    long vulnerableDeps = results.stream().filter(VulnerabilityScannerService.ScanResult::vulnerable).count();
+    long vulnerableDeps =
+        results.stream().filter(VulnerabilityScannerService.ScanResult::vulnerable).count();
     long totalVulns =
         results.stream()
             .filter(VulnerabilityScannerService.ScanResult::vulnerable)
@@ -347,7 +349,9 @@ public final class ReportExportService {
       for (OsvVulnerability vuln : sr.vulnerabilities()) {
         String severity = SEVERITY_ANALYZER.getSeverity(vuln);
         Double score = SEVERITY_ANALYZER.getBaseScore(vuln);
-        md.append("- **[").append(vuln.id()).append("](https://osv.dev/vulnerability/")
+        md.append("- **[")
+            .append(vuln.id())
+            .append("](https://osv.dev/vulnerability/")
             .append(vuln.id())
             .append(")** — ")
             .append(severity);

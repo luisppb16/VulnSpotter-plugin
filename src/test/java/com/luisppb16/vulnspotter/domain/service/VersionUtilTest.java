@@ -104,8 +104,7 @@ class VersionUtilTest {
 
     @Test
     void prefersStableOverPrerelease() {
-      String best =
-          VersionUtil.findBestFixedVersion(List.of("2.0.0-RC1", "2.0.0"), "1.9.0");
+      String best = VersionUtil.findBestFixedVersion(List.of("2.0.0-RC1", "2.0.0"), "1.9.0");
       assertThat(best).isEqualTo("2.0.0");
     }
 
@@ -124,8 +123,7 @@ class VersionUtilTest {
 
     @Test
     void withUnknownCurrentVersionPrefersFirstStable() {
-      String best =
-          VersionUtil.findBestFixedVersion(List.of("2.0.0-RC1", "1.5.0", "1.6.0"), null);
+      String best = VersionUtil.findBestFixedVersion(List.of("2.0.0-RC1", "1.5.0", "1.6.0"), null);
       assertThat(best).isEqualTo("1.5.0");
     }
   }

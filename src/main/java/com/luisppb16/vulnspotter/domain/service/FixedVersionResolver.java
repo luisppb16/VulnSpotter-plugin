@@ -73,8 +73,8 @@ public final class FixedVersionResolver {
     }
     String best = null;
     for (OsvVulnerability vuln : vulnerabilities) {
-      String fixed = VersionUtil.findBestFixedVersion(
-          fixedVersions(vuln, packageName), currentVersion);
+      String fixed =
+          VersionUtil.findBestFixedVersion(fixedVersions(vuln, packageName), currentVersion);
       if (fixed == null) {
         continue;
       }
@@ -89,22 +89,22 @@ public final class FixedVersionResolver {
    * Match a scanned package name against the package name declared in an OSV record.
    *
    * <p>For group-aware ecosystems (Maven uses {@code group:artifact}) a bare artifactId-only match
-   * is intentionally <b>not</b> accepted: a vulnerability on {@code org.evil:jackson-core} must never
-   * be attributed to {@code com.fasterxml.jackson.core:jackson-core}. The {@code group:artifact}
-   * suffix check still lets a bare scanned name match a grouped OSV name (and vice versa).
+   * is intentionally <b>not</b> accepted: a vulnerability on {@code org.evil:jackson-core} must
+   * never be attributed to {@code com.fasterxml.jackson.core:jackson-core}. The {@code
+   * group:artifact} suffix check still lets a bare scanned name match a grouped OSV name (and vice
+   * versa).
    */
   public static boolean isMatchingPackage(String scannedPkg, String vulnPkg) {
     if (scannedPkg == null || vulnPkg == null) return false;
     if (scannedPkg.equals(vulnPkg)) return true;
     if (vulnPkg.endsWith(":" + scannedPkg)) return true;
-    if (scannedPkg.endsWith(":" + vulnPkg)) return true;
-    return false;
+    return scannedPkg.endsWith(":" + vulnPkg);
   }
 
   /**
-   * Human-readable affected ranges for the package in a vulnerability, derived from the
-   * {@code introduced}/{@code fixed}/{@code last_affected} events of its ECOSYSTEM/SEMVER ranges.
-   * Each entry looks like {@code ">=1.0.0, <1.2.3"} or {@code ">=1.0.0, up to 1.1.0"}.
+   * Human-readable affected ranges for the package in a vulnerability, derived from the {@code
+   * introduced}/{@code fixed}/{@code last_affected} events of its ECOSYSTEM/SEMVER ranges. Each
+   * entry looks like {@code ">=1.0.0, <1.2.3"} or {@code ">=1.0.0, up to 1.1.0"}.
    */
   public static List<String> affectedRanges(OsvVulnerability vuln, String packageName) {
     if (vuln == null || vuln.affected() == null) {

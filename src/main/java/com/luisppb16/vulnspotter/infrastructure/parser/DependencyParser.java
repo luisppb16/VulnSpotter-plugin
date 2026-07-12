@@ -69,9 +69,9 @@ public final class DependencyParser {
   // Matches a Maven local-repository path: .../repository/<group path>/<artifact>/<version>/<jar>
   private static final Pattern MAVEN_REPO_PATTERN =
       Pattern.compile(".*/repository/(.+)/([^/]+)/([^/]+)/[^/]+-[^/]+\\.jar$");
-  // Matches a package-lock v2/v3 key like "node_modules/foo" or "node_modules/foo/node_modules/bar".
-  private static final Pattern NPM_LOCK_KEY_PATTERN =
-      Pattern.compile("^node_modules/(.+)$");
+  // Matches a package-lock v2/v3 key like "node_modules/foo" or
+  // "node_modules/foo/node_modules/bar".
+  private static final Pattern NPM_LOCK_KEY_PATTERN = Pattern.compile("^node_modules/(.+)$");
   private static final String MAVEN_ECOSYSTEM = "Maven";
   private static final ObjectMapper MAPPER = new ObjectMapper();
 
@@ -206,7 +206,8 @@ public final class DependencyParser {
     JsonNode root = MAPPER.readTree(lockPath.toFile());
     JsonNode packages = root.get("packages");
     if (packages != null && packages.isObject()) {
-      packages.fieldNames()
+      packages
+          .fieldNames()
           .forEachRemaining(
               key -> {
                 // The root project itself is keyed as "" ; nested node_modules entries carry the

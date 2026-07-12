@@ -34,6 +34,40 @@ public final class SeverityAnalyzer {
   /** Preference order when a record carries several CVSS entries. */
   private static final List<String> CVSS_TYPE_PRIORITY = List.of("CVSS_V4", "CVSS_V3", "CVSS_V2");
 
+  /** Parse a CVSS vector (or plain numeric score used by some non-standard feeds). */
+  private static Double parseScoreValue(String rawScore) {
+    if (rawScore == null || rawScore.isBlank()) {
+      return null;
+    }
+    String trimmed = rawScore.trim();
+    try {
+      Cvss cvss = Cvss.fromVector(trimmed);
+      if (cvss != null) {
+        return cvss.calculateScore().getBaseScore();
+      }
+    } catch (RuntimeException e) {
+      // Malformed vector; fall through to the plain-number fallback.
+    }
+    try {
+      double value = Double.parseDouble(trimmed);
+      return (value >= 0.0 && value <= 10.0) ? value : null;
+    } catch (NumberFormatException e) {
+      return null;
+    }
+  }
+
+  /** Map severity string to numeric level (higher = more severe). */
+  public static int severityToLevel(String severity) {
+    return switch (severity == null ? "" : severity) {
+      case CRITICAL -> 5;
+      case HIGH -> 4;
+      case MEDIUM -> 3;
+      case LOW -> 2;
+      case UNKNOWN -> 1;
+      default -> 0;
+    };
+  }
+
   /** Determine severity of a vulnerability: CVSS first, then database_specific fallback. */
   public String getSeverity(OsvVulnerability vulnerability) {
     ScoreWithType best = getScoreWithType(vulnerability);
@@ -108,28 +142,6 @@ public final class SeverityAnalyzer {
     return getSeverityLevel(score);
   }
 
-  /** Parse a CVSS vector (or plain numeric score used by some non-standard feeds). */
-  private static Double parseScoreValue(String rawScore) {
-    if (rawScore == null || rawScore.isBlank()) {
-      return null;
-    }
-    String trimmed = rawScore.trim();
-    try {
-      Cvss cvss = Cvss.fromVector(trimmed);
-      if (cvss != null) {
-        return cvss.calculateScore().getBaseScore();
-      }
-    } catch (RuntimeException e) {
-      // Malformed vector; fall through to the plain-number fallback.
-    }
-    try {
-      double value = Double.parseDouble(trimmed);
-      return (value >= 0.0 && value <= 10.0) ? value : null;
-    } catch (NumberFormatException e) {
-      return null;
-    }
-  }
-
   /** Map CVSS score to severity level (CVSS v3 qualitative rating scale). */
   private String getSeverityLevel(double score) {
     if (score >= 9.0) return CRITICAL;
@@ -161,18 +173,6 @@ public final class SeverityAnalyzer {
                 .max()
                 .orElse(0);
     return levelToSeverity(maxLevel);
-  }
-
-  /** Map severity string to numeric level (higher = more severe). */
-  public static int severityToLevel(String severity) {
-    return switch (severity == null ? "" : severity) {
-      case CRITICAL -> 5;
-      case HIGH -> 4;
-      case MEDIUM -> 3;
-      case LOW -> 2;
-      case UNKNOWN -> 1;
-      default -> 0;
-    };
   }
 
   /** Map numeric level to severity string. */

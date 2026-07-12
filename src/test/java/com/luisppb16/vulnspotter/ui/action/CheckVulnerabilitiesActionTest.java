@@ -87,7 +87,8 @@ class CheckVulnerabilitiesActionTest {
         .when(NotificationGroupManager::getInstance)
         .thenReturn(notificationGroupManager);
     when(notificationGroupManager.getNotificationGroup(anyString())).thenReturn(notificationGroup);
-    when(notificationGroup.createNotification(anyString(), anyString(), any(NotificationType.class)))
+    when(notificationGroup.createNotification(
+            anyString(), anyString(), any(NotificationType.class)))
         .thenReturn(notification);
   }
 

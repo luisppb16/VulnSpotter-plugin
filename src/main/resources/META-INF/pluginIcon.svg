@@ -40,7 +40,8 @@
     </g>
 
     <!-- Glass highlight -->
-    <path d="M10.4 13.2 A 8.6 8.6 0 0 1 13.2 10.4" stroke="#FFFFFF" stroke-width="1.6" fill="none" stroke-linecap="round" opacity="0.75"/>
+    <path d="M10.4 13.2 A 8.6 8.6 0 0 1 13.2 10.4" stroke="#FFFFFF" stroke-width="1.6" fill="none"
+          stroke-linecap="round" opacity="0.75"/>
 
     <!-- Lens ring -->
     <circle cx="17" cy="17" r="11" fill="none" stroke="#2E3A59" stroke-width="3"/>

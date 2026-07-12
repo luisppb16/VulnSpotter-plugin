@@ -49,8 +49,8 @@ import com.luisppb16.vulnspotter.infrastructure.report.VulnerabilityReportBuilde
 import com.luisppb16.vulnspotter.util.HtmlEscaper;
 import java.awt.*;
 import java.awt.datatransfer.StringSelection;
-import java.io.Serial;
 import java.io.IOException;
+import java.io.Serial;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -163,8 +163,7 @@ public final class VulnSpotterToolWindow implements Disposable {
       pane.setEditable(false);
       pane.addHyperlinkListener(
           e -> {
-            if (e.getEventType() == HyperlinkEvent.EventType.ACTIVATED
-                && e.getURL() != null) {
+            if (e.getEventType() == HyperlinkEvent.EventType.ACTIVATED && e.getURL() != null) {
               BrowserUtil.browse(e.getURL());
             }
           });
@@ -294,8 +293,7 @@ public final class VulnSpotterToolWindow implements Disposable {
     content.add(mainPanel, BorderLayout.CENTER);
     cardLayout.show(mainPanel, "EMPTY");
 
-    loadDetailsHtml(
-        generateHtml("<h1>VulnSpotter</h1><p>Select a dependency to see details.</p>"));
+    loadDetailsHtml(generateHtml("<h1>VulnSpotter</h1><p>Select a dependency to see details.</p>"));
 
     // Re-render the details panel when the IDE theme changes
     ApplicationManager.getApplication()
@@ -317,6 +315,57 @@ public final class VulnSpotterToolWindow implements Disposable {
                       generateHtml(
                           "<h1>VulnSpotter</h1><p>Select a dependency to see details.</p>"));
                 });
+  }
+
+  /** Builds an ecosystem-appropriate manifest snippet pinning the fixed version. */
+  private static String buildUpgradeSnippet(
+      VulnerabilityScannerService.ScanResult result, String fix) {
+    String name = result.pkg().name();
+    String ecosystem = result.pkg().ecosystem();
+    if (ecosystem == null) {
+      return name + ":" + fix;
+    }
+    return switch (ecosystem) {
+      case "Maven" -> {
+        int colon = name.indexOf(':');
+        String group = colon >= 0 ? name.substring(0, colon) : name;
+        String artifact = colon >= 0 ? name.substring(colon + 1) : name;
+        yield "<dependency>\n"
+            + "  <groupId>"
+            + group
+            + "</groupId>\n"
+            + "  <artifactId>"
+            + artifact
+            + "</artifactId>\n"
+            + "  <version>"
+            + fix
+            + "</version>\n"
+            + "</dependency>";
+      }
+      case "npm" -> "npm install " + name + "@" + fix;
+      case "PyPI" -> name + "==" + fix;
+      case "Go" -> name + " v" + fix;
+      default -> name + ":" + fix;
+    };
+  }
+
+  private static String classificationLabel(boolean isDirect, Set<String> roots) {
+    if (isDirect && roots.isEmpty()) {
+      return "Direct dependency";
+    }
+    if (!isDirect) {
+      return "Transitive dependency";
+    }
+    return "Direct and transitive dependency";
+  }
+
+  /** Only http(s) links are rendered; javascript:/file: URLs from advisories are dropped. */
+  private static boolean isSafeUrl(String url) {
+    if (url == null || url.isBlank()) {
+      return false;
+    }
+    String lower = url.trim().toLowerCase(Locale.ROOT);
+    return lower.startsWith("http://") || lower.startsWith("https://");
   }
 
   @Override
@@ -376,9 +425,7 @@ public final class VulnSpotterToolWindow implements Disposable {
                     result.vulnerabilities().stream()
                         .findFirst()
                         .ifPresent(
-                            v ->
-                                BrowserUtil.browse(
-                                    "https://osv.dev/vulnerability/" + v.id()))));
+                            v -> BrowserUtil.browse("https://osv.dev/vulnerability/" + v.id()))));
     menu.add(openOsv);
 
     // Submenu to open every vulnerability advisory of the selected dependency at once.
@@ -432,9 +479,7 @@ public final class VulnSpotterToolWindow implements Disposable {
             withSelectedResult(
                 result ->
                     FixedVersionResolver.recommendUpgrade(
-                            result.vulnerabilities(),
-                            result.pkg().name(),
-                            result.pkg().version())
+                            result.vulnerabilities(), result.pkg().name(), result.pkg().version())
                         .ifPresent(
                             fix ->
                                 CopyPasteManager.getInstance()
@@ -442,22 +487,18 @@ public final class VulnSpotterToolWindow implements Disposable {
     menu.add(copyFix);
 
     JMenuItem copySnippet = new JMenuItem("Copy Upgrade Snippet");
-    copySnippet.setToolTipText(
-        "Copy a manifest snippet that pins the recommended fixed version.");
+    copySnippet.setToolTipText("Copy a manifest snippet that pins the recommended fixed version.");
     copySnippet.addActionListener(
         e ->
             withSelectedResult(
                 result ->
                     FixedVersionResolver.recommendUpgrade(
-                            result.vulnerabilities(),
-                            result.pkg().name(),
-                            result.pkg().version())
+                            result.vulnerabilities(), result.pkg().name(), result.pkg().version())
                         .ifPresent(
                             fix ->
                                 CopyPasteManager.getInstance()
                                     .setContents(
-                                        new StringSelection(
-                                            buildUpgradeSnippet(result, fix))))));
+                                        new StringSelection(buildUpgradeSnippet(result, fix))))));
     menu.add(copySnippet);
 
     menu.addSeparator();
@@ -467,38 +508,6 @@ public final class VulnSpotterToolWindow implements Disposable {
     menu.add(ignore);
 
     return menu;
-  }
-
-  /** Builds an ecosystem-appropriate manifest snippet pinning the fixed version. */
-  private static String buildUpgradeSnippet(
-      VulnerabilityScannerService.ScanResult result, String fix) {
-    String name = result.pkg().name();
-    String ecosystem = result.pkg().ecosystem();
-    if (ecosystem == null) {
-      return name + ":" + fix;
-    }
-    return switch (ecosystem) {
-      case "Maven" -> {
-        int colon = name.indexOf(':');
-        String group = colon >= 0 ? name.substring(0, colon) : name;
-        String artifact = colon >= 0 ? name.substring(colon + 1) : name;
-        yield "<dependency>\n"
-            + "  <groupId>"
-            + group
-            + "</groupId>\n"
-            + "  <artifactId>"
-            + artifact
-            + "</artifactId>\n"
-            + "  <version>"
-            + fix
-            + "</version>\n"
-            + "</dependency>";
-      }
-      case "npm" -> "npm install " + name + "@" + fix;
-      case "PyPI" -> name + "==" + fix;
-      case "Go" -> name + " v" + fix;
-      default -> name + ":" + fix;
-    };
   }
 
   private void ignoreDependency(VulnerabilityScannerService.ScanResult result) {
@@ -514,11 +523,9 @@ public final class VulnSpotterToolWindow implements Disposable {
                 Path ignoreFile = Paths.get(base, ".vulnspotterignore");
                 String line = entry + System.lineSeparator();
                 if (Files.exists(ignoreFile)) {
-                  Files.writeString(ignoreFile, line,
-                      StandardOpenOption.APPEND);
+                  Files.writeString(ignoreFile, line, StandardOpenOption.APPEND);
                 } else {
-                  Files.writeString(ignoreFile, line,
-                      StandardOpenOption.CREATE);
+                  Files.writeString(ignoreFile, line, StandardOpenOption.CREATE);
                 }
                 ApplicationManager.getApplication()
                     .invokeLater(
@@ -549,8 +556,7 @@ public final class VulnSpotterToolWindow implements Disposable {
             });
   }
 
-  private void withSelectedResult(
-      Consumer<VulnerabilityScannerService.ScanResult> consumer) {
+  private void withSelectedResult(Consumer<VulnerabilityScannerService.ScanResult> consumer) {
     int row = resultsTable.getSelectedRow();
     if (row < 0) return;
     int modelRow = resultsTable.convertRowIndexToModel(row);
@@ -594,8 +600,7 @@ public final class VulnSpotterToolWindow implements Disposable {
                 }
                 if (vuln.aliases() != null) {
                   for (String alias : vuln.aliases()) {
-                    if (alias != null
-                        && alias.toLowerCase(Locale.ROOT).contains(searchText)) {
+                    if (alias != null && alias.toLowerCase(Locale.ROOT).contains(searchText)) {
                       return true;
                     }
                   }
@@ -728,7 +733,8 @@ public final class VulnSpotterToolWindow implements Disposable {
     exportButton.setEnabled(false);
     progressBar.setVisible(false);
 
-    Throwable cause = ex instanceof CompletionException && ex.getCause() != null ? ex.getCause() : ex;
+    Throwable cause =
+        ex instanceof CompletionException && ex.getCause() != null ? ex.getCause() : ex;
     if (cause instanceof CancellationException) {
       statusLabel.setText("Scan cancelled");
       return;
@@ -736,10 +742,11 @@ public final class VulnSpotterToolWindow implements Disposable {
     String message;
     if (cause instanceof TimeoutException) {
       message =
-          "The scan timed out after " + SCAN_TIMEOUT_SECONDS + "s. Try again or narrow the project.";
+          "The scan timed out after "
+              + SCAN_TIMEOUT_SECONDS
+              + "s. Try again or narrow the project.";
     } else {
-      message =
-          cause.getMessage() != null ? cause.getMessage() : cause.getClass().getSimpleName();
+      message = cause.getMessage() != null ? cause.getMessage() : cause.getClass().getSimpleName();
     }
     statusLabel.setText("Scan failed: " + message);
     NotificationGroupManager.getInstance()
@@ -950,16 +957,6 @@ public final class VulnSpotterToolWindow implements Disposable {
     return direct;
   }
 
-  private static String classificationLabel(boolean isDirect, Set<String> roots) {
-    if (isDirect && roots.isEmpty()) {
-      return "Direct dependency";
-    }
-    if (!isDirect) {
-      return "Transitive dependency";
-    }
-    return "Direct and transitive dependency";
-  }
-
   private void appendDirectRemediation(
       StringBuilder sb,
       VulnerabilityScannerService.ScanResult result,
@@ -1022,8 +1019,7 @@ public final class VulnSpotterToolWindow implements Disposable {
               String sev = severityAnalyzer.getSeverity(vuln);
               Double score = severityAnalyzer.getBaseScore(vuln);
               String fixedV =
-                  FixedVersionResolver.resolve(
-                      vuln, result.pkg().name(), result.pkg().version());
+                  FixedVersionResolver.resolve(vuln, result.pkg().name(), result.pkg().version());
 
               sb.append("<div class='card'>");
               sb.append("<div class='card-header'>");
@@ -1048,8 +1044,7 @@ public final class VulnSpotterToolWindow implements Disposable {
                   .append(
                       vuln.summary() != null ? HtmlEscaper.escape(vuln.summary()) : "No summary")
                   .append(DIV_CLOSE);
-              List<String> ranges =
-                  FixedVersionResolver.affectedRanges(vuln, result.pkg().name());
+              List<String> ranges = FixedVersionResolver.affectedRanges(vuln, result.pkg().name());
               if (!ranges.isEmpty()) {
                 sb.append("<div class='affected-range'>Affected: ")
                     .append(HtmlEscaper.escape(String.join(", ", ranges)))
@@ -1103,15 +1098,6 @@ public final class VulnSpotterToolWindow implements Disposable {
                     .append("'>")
                     .append(HtmlEscaper.escape(cve))
                     .append("</a></span>"));
-  }
-
-  /** Only http(s) links are rendered; javascript:/file: URLs from advisories are dropped. */
-  private static boolean isSafeUrl(String url) {
-    if (url == null || url.isBlank()) {
-      return false;
-    }
-    String lower = url.trim().toLowerCase(Locale.ROOT);
-    return lower.startsWith("http://") || lower.startsWith("https://");
   }
 
   private void appendDependencyChains(
@@ -1270,6 +1256,8 @@ public final class VulnSpotterToolWindow implements Disposable {
     return content;
   }
 
+  private record HtmlTheme(String bgColor, String textColor, String cardBg, String borderColor) {}
+
   /** Renders the severity column with a colored icon plus readable text. */
   private final class SeverityCellRenderer extends DefaultTableCellRenderer {
     @Serial private static final long serialVersionUID = 1L;
@@ -1291,6 +1279,4 @@ public final class VulnSpotterToolWindow implements Disposable {
       return severity.charAt(0) + severity.substring(1).toLowerCase(Locale.ROOT);
     }
   }
-
-  private record HtmlTheme(String bgColor, String textColor, String cardBg, String borderColor) {}
 }

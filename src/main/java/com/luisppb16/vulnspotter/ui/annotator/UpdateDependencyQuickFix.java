@@ -30,10 +30,10 @@ import org.jetbrains.annotations.NotNull;
  *
  * <p>In {@code pom.xml} it edits the {@code <version>} tag (or the property definition when the
  * version is declared through {@code ${my.version}}); when no {@code <version>} sub-tag exists it
- * inserts one. In {@code build.gradle} it replaces the literal
- * {@code group:artifact:version} coordinate, bounded so it never corrupts a longer token. The fix
- * refuses to downgrade a dependency that is already at or above the target version, and tells the
- * user when the version is declared indirectly (property/catalog) and cannot be auto-upgraded.
+ * inserts one. In {@code build.gradle} it replaces the literal {@code group:artifact:version}
+ * coordinate, bounded so it never corrupts a longer token. The fix refuses to downgrade a
+ * dependency that is already at or above the target version, and tells the user when the version is
+ * declared indirectly (property/catalog) and cannot be auto-upgraded.
  */
 public class UpdateDependencyQuickFix implements IntentionAction {
 
@@ -43,11 +43,32 @@ public class UpdateDependencyQuickFix implements IntentionAction {
   private final String currentVersion;
   private final String targetVersion;
 
-  public UpdateDependencyQuickFix(
-      String packageName, String currentVersion, String targetVersion) {
+  public UpdateDependencyQuickFix(String packageName, String currentVersion, String targetVersion) {
     this.packageName = packageName;
     this.currentVersion = currentVersion;
     this.targetVersion = targetVersion;
+  }
+
+  /** Characters that may appear inside a group:artifact:version coordinate token. */
+  private static boolean isCoordinateChar(char c) {
+    return (c >= 'a' && c <= 'z')
+        || (c >= 'A' && c <= 'Z')
+        || (c >= '0' && c <= '9')
+        || c == ':'
+        || c == '.'
+        || c == '-'
+        || c == '+'
+        || c == '_'
+        || c == '~'
+        || c == '^'
+        || c == '/';
+  }
+
+  private static void notify(Project project, String message, NotificationType type) {
+    NotificationGroupManager.getInstance()
+        .getNotificationGroup(NOTIFICATION_GROUP_ID)
+        .createNotification("VulnSpotter", message, type)
+        .notify(project);
   }
 
   @Override
@@ -133,7 +154,8 @@ public class UpdateDependencyQuickFix implements IntentionAction {
       return;
     }
 
-    // Guard against downgrading / re-applying: only write when the current literal is the vulnerable
+    // Guard against downgrading / re-applying: only write when the current literal is the
+    // vulnerable
     // version and the target is strictly greater.
     if (versionText != null && !versionText.equals(currentVersion)) {
       if (VersionUtil.compareVersions(versionText, targetVersion) >= 0) {
@@ -209,22 +231,6 @@ public class UpdateDependencyQuickFix implements IntentionAction {
               + ".",
           NotificationType.WARNING);
     }
-  }
-
-  /** Characters that may appear inside a group:artifact:version coordinate token. */
-  private static boolean isCoordinateChar(char c) {
-    return (c >= 'a' && c <= 'z')
-        || (c >= 'A' && c <= 'Z')
-        || (c >= '0' && c <= '9')
-        || c == ':' || c == '.' || c == '-' || c == '+' || c == '_' || c == '~' || c == '^'
-        || c == '/';
-  }
-
-  private static void notify(Project project, String message, NotificationType type) {
-    NotificationGroupManager.getInstance()
-        .getNotificationGroup(NOTIFICATION_GROUP_ID)
-        .createNotification("VulnSpotter", message, type)
-        .notify(project);
   }
 
   @Override

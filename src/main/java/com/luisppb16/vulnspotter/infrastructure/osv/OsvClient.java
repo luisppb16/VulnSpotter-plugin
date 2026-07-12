@@ -42,12 +42,12 @@ import java.util.concurrent.Executors;
  * HttpRequests for network calls to integrate properly with IDE's proxy and avoid macOS keychain
  * popups.
  *
- * <p>The {@code /v1/querybatch} endpoint only returns minimal records (id + modified), so after
- * the batch lookup every distinct vulnerability id is hydrated through {@code /v1/vulns/{id}}
- * (with its own cache) to obtain severity, summary, affected ranges and references.
+ * <p>The {@code /v1/querybatch} endpoint only returns minimal records (id + modified), so after the
+ * batch lookup every distinct vulnerability id is hydrated through {@code /v1/vulns/{id}} (with its
+ * own cache) to obtain severity, summary, affected ranges and references.
  *
- * <p>Network failures are propagated as failed futures — they are never silently converted into
- * "no vulnerabilities".
+ * <p>Network failures are propagated as failed futures — they are never silently converted into "no
+ * vulnerabilities".
  */
 public class OsvClient {
 
@@ -77,6 +77,91 @@ public class OsvClient {
   public OsvClient(ExecutorService executorService) {
     this.executorService = executorService;
     this.objectMapper = new ObjectMapper();
+  }
+
+  private static OsvResponse mergeVulns(OsvResponse accumulated, OsvResponse page) {
+    if (page == null || page.vulns() == null || page.vulns().isEmpty()) {
+      return accumulated;
+    }
+    if (accumulated == null || accumulated.vulns() == null || accumulated.vulns().isEmpty()) {
+      return new OsvResponse(page.vulns());
+    }
+    // De-duplicate by vulnerability id so a vuln returned on two pages is not shown twice.
+    Map<String, OsvVulnerability> byId = new LinkedHashMap<>();
+    for (OsvVulnerability v : accumulated.vulns()) {
+      if (v.id() != null) {
+        byId.put(v.id(), v);
+      }
+    }
+    for (OsvVulnerability v : page.vulns()) {
+      if (v.id() != null) {
+        byId.putIfAbsent(v.id(), v);
+      }
+    }
+    return new OsvResponse(new ArrayList<>(byId.values()));
+  }
+
+  private static Set<String> collectIds(List<OsvResponse> minimalResults) {
+    Set<String> ids = new LinkedHashSet<>();
+    for (OsvResponse response : minimalResults) {
+      if (response == null || response.vulns() == null) continue;
+      for (OsvVulnerability vuln : response.vulns()) {
+        if (vuln.id() != null && !vuln.id().isBlank()) {
+          ids.add(vuln.id());
+        }
+      }
+    }
+    return ids;
+  }
+
+  /** True for failures worth retrying: 5xx, 429, timeouts. 4xx (except 429) fails fast. */
+  private static boolean isTransient(IOException e) {
+    if (e instanceof HttpRequests.HttpStatusException status) {
+      int code = status.getStatusCode();
+      return code == 429 || code >= 500;
+    }
+    return true; // connect/read timeouts and other I/O errors
+  }
+
+  private static void sleepBackoff(int attempt) {
+    try {
+      Thread.sleep(RETRY_BACKOFF_MS * attempt);
+    } catch (InterruptedException ie) {
+      Thread.currentThread().interrupt();
+    }
+  }
+
+  private static String cacheKey(OsvPackage pkg) {
+    return pkg.ecosystem() + ":" + pkg.name() + ":" + pkg.version();
+  }
+
+  private static Instant cacheExpiration() {
+    int cacheMinutes =
+        VulnSpotterSettings.getInstance() != null
+            ? VulnSpotterSettings.getInstance().getCacheDurationMinutes()
+            : 60;
+    return Instant.now().plus(Duration.ofMinutes(cacheMinutes));
+  }
+
+  private static Optional<OsvResponse> toOptionalResponse(OsvResponse response) {
+    return Optional.ofNullable(emptyToNull(response));
+  }
+
+  private static OsvResponse emptyToNull(OsvResponse response) {
+    if (response == null || response.vulns() == null || response.vulns().isEmpty()) {
+      return null;
+    }
+    return response;
+  }
+
+  /** Drops withdrawn advisories, preserving the pagination token. */
+  private static OsvResponse filterWithdrawn(OsvResponse response) {
+    if (response == null || response.vulns() == null) {
+      return response;
+    }
+    List<OsvVulnerability> active =
+        response.vulns().stream().filter(v -> !v.isWithdrawn()).toList();
+    return new OsvResponse(active, response.nextPageToken());
   }
 
   /** Releases the internal thread pool. Called when the owning project service is disposed. */
@@ -120,9 +205,9 @@ public class OsvClient {
   }
 
   /**
-   * Batch-checks packages and hydrates each reported vulnerability id into a full OSV record.
-   * The returned list preserves the order of {@code packages}; entries without vulnerabilities
-   * are {@code null}.
+   * Batch-checks packages and hydrates each reported vulnerability id into a full OSV record. The
+   * returned list preserves the order of {@code packages}; entries without vulnerabilities are
+   * {@code null}.
    */
   public CompletableFuture<Optional<OsvBatchResponse>> checkDependencies(
       List<OsvPackage> packages) {
@@ -202,8 +287,7 @@ public class OsvClient {
 
       for (int page = 0; page < MAX_PAGES && !chunk.isEmpty(); page++) {
         OsvBatchResponse batch = postBatch(chunk);
-        List<OsvResponse> batchResults =
-            batch.results() == null ? List.of() : batch.results();
+        List<OsvResponse> batchResults = batch.results() == null ? List.of() : batch.results();
 
         List<OsvQuery> nextChunk = new ArrayList<>();
         List<Integer> nextIndices = new ArrayList<>();
@@ -249,44 +333,9 @@ public class OsvClient {
     }
   }
 
-  private static OsvResponse mergeVulns(OsvResponse accumulated, OsvResponse page) {
-    if (page == null || page.vulns() == null || page.vulns().isEmpty()) {
-      return accumulated;
-    }
-    if (accumulated == null || accumulated.vulns() == null || accumulated.vulns().isEmpty()) {
-      return new OsvResponse(page.vulns());
-    }
-    // De-duplicate by vulnerability id so a vuln returned on two pages is not shown twice.
-    Map<String, OsvVulnerability> byId = new LinkedHashMap<>();
-    for (OsvVulnerability v : accumulated.vulns()) {
-      if (v.id() != null) {
-        byId.put(v.id(), v);
-      }
-    }
-    for (OsvVulnerability v : page.vulns()) {
-      if (v.id() != null) {
-        byId.putIfAbsent(v.id(), v);
-      }
-    }
-    return new OsvResponse(new ArrayList<>(byId.values()));
-  }
-
-  private static Set<String> collectIds(List<OsvResponse> minimalResults) {
-    Set<String> ids = new LinkedHashSet<>();
-    for (OsvResponse response : minimalResults) {
-      if (response == null || response.vulns() == null) continue;
-      for (OsvVulnerability vuln : response.vulns()) {
-        if (vuln.id() != null && !vuln.id().isBlank()) {
-          ids.add(vuln.id());
-        }
-      }
-    }
-    return ids;
-  }
-
   /**
-   * Fetches full records for the given ids, using the per-id cache. Individual failures degrade
-   * to the minimal record instead of failing the whole scan.
+   * Fetches full records for the given ids, using the per-id cache. Individual failures degrade to
+   * the minimal record instead of failing the whole scan.
    */
   private Map<String, OsvVulnerability> hydrate(Set<String> ids, Instant exp) {
     Map<String, OsvVulnerability> hydrated = new ConcurrentHashMap<>();
@@ -315,8 +364,7 @@ public class OsvClient {
   }
 
   private OsvVulnerability fetchVulnerability(String id) {
-    String url =
-        ProjectConstants.OSV_API_VULNS_URL + URLEncoder.encode(id, StandardCharsets.UTF_8);
+    String url = ProjectConstants.OSV_API_VULNS_URL + URLEncoder.encode(id, StandardCharsets.UTF_8);
     try {
       String body = getWithRetry(url);
       return objectMapper.readValue(body, OsvVulnerability.class);
@@ -374,56 +422,6 @@ public class OsvClient {
     throw lastFailure;
   }
 
-  /** True for failures worth retrying: 5xx, 429, timeouts. 4xx (except 429) fails fast. */
-  private static boolean isTransient(IOException e) {
-    if (e instanceof HttpRequests.HttpStatusException status) {
-      int code = status.getStatusCode();
-      return code == 429 || code >= 500;
-    }
-    return true; // connect/read timeouts and other I/O errors
-  }
-
-  private static void sleepBackoff(int attempt) {
-    try {
-      Thread.sleep(RETRY_BACKOFF_MS * attempt);
-    } catch (InterruptedException ie) {
-      Thread.currentThread().interrupt();
-    }
-  }
-
-  private static String cacheKey(OsvPackage pkg) {
-    return pkg.ecosystem() + ":" + pkg.name() + ":" + pkg.version();
-  }
-
-  private static Instant cacheExpiration() {
-    int cacheMinutes =
-        VulnSpotterSettings.getInstance() != null
-            ? VulnSpotterSettings.getInstance().getCacheDurationMinutes()
-            : 60;
-    return Instant.now().plus(Duration.ofMinutes(cacheMinutes));
-  }
-
-  private static Optional<OsvResponse> toOptionalResponse(OsvResponse response) {
-    return Optional.ofNullable(emptyToNull(response));
-  }
-
-  private static OsvResponse emptyToNull(OsvResponse response) {
-    if (response == null || response.vulns() == null || response.vulns().isEmpty()) {
-      return null;
-    }
-    return response;
-  }
-
-  /** Drops withdrawn advisories, preserving the pagination token. */
-  private static OsvResponse filterWithdrawn(OsvResponse response) {
-    if (response == null || response.vulns() == null) {
-      return response;
-    }
-    List<OsvVulnerability> active =
-        response.vulns().stream().filter(v -> !v.isWithdrawn()).toList();
-    return new OsvResponse(active, response.nextPageToken());
-  }
-
   /** Signals an OSV API failure; carried by the future so callers can show a real error. */
   public static final class OsvClientException extends RuntimeException {
     @Serial private static final long serialVersionUID = 1L;
@@ -433,14 +431,7 @@ public class OsvClient {
     }
   }
 
-  private static final class CacheEntry<T> {
-    final T value;
-    final Instant expiration;
-
-    CacheEntry(T value, Instant expiration) {
-      this.value = value;
-      this.expiration = expiration;
-    }
+  private record CacheEntry<T>(T value, Instant expiration) {
 
     boolean isFresh() {
       return Instant.now().isBefore(expiration);
