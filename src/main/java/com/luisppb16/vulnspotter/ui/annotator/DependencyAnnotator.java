@@ -23,7 +23,8 @@ import org.jetbrains.annotations.NotNull;
 /**
  * Highlights vulnerable dependencies in {@code pom.xml} (XML) and {@code build.gradle} (Groovy)
  * using the in-memory results of the last VulnSpotter scan. No network or heavy work happens here;
- * highlighting refreshes automatically after each scan via {@code DaemonCodeAnalyzer.restart()}.
+ * highlighting refreshes automatically after each scan because the scanner service reparses the
+ * open manifests.
  *
  * <p>The annotation severity reflects the highest vulnerability severity (CRITICAL/HIGH → error
  * stripe, MEDIUM → warning, LOW/UNKNOWN → information), so the editor surfaces the worst issues
