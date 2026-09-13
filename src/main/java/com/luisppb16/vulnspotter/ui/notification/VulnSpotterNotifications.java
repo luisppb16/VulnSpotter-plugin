@@ -14,8 +14,8 @@ import com.intellij.openapi.project.Project;
 
 /**
  * Central access point for VulnSpotter IDE notifications. Every balloon shown by the plugin goes
- * through the {@code "VulnSpotter Notifications"} group declared in {@code plugin.xml}, so the group
- * id lives in exactly one place.
+ * through the {@code "VulnSpotter Notifications"} group declared in {@code plugin.xml}, so the
+ * group id lives in exactly one place.
  */
 public final class VulnSpotterNotifications {
 

@@ -22,10 +22,10 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 /**
- * Runs a vulnerability scan when a project is opened, if the {@code analyzeOnProjectOpen} setting is
- * enabled. The scan runs asynchronously: when it completes, the results are stored in the scanner
- * service, handed to the {@link VulnerabilityAlertService} (email alerts) and, when a critical
- * vulnerability was found, surfaced through a warning balloon.
+ * Runs a vulnerability scan when a project is opened, if the {@code analyzeOnProjectOpen} setting
+ * is enabled. The scan runs asynchronously: when it completes, the results are stored in the
+ * scanner service, handed to the {@link VulnerabilityAlertService} (email alerts) and, when a
+ * critical vulnerability was found, surfaced through a warning balloon.
  *
  * <p>Every exit path is safe: a missing settings service (headless), a disabled toggle or a
  * disposed project simply skip the scan.
@@ -34,9 +34,27 @@ public final class ProjectOpenScanActivity implements ProjectActivity {
 
   private static final Logger LOG = Logger.getInstance(ProjectOpenScanActivity.class);
 
+  /**
+   * Whether any scan result carries at least one {@link SeverityAnalyzer#CRITICAL} vulnerability. A
+   * result without vulnerabilities (or without severity data) is never critical.
+   *
+   * @param results scan results, may be {@code null}.
+   * @return {@code true} when a critical vulnerability was found.
+   */
+  static boolean hasCriticalResults(List<VulnerabilityScannerService.ScanResult> results) {
+    SeverityAnalyzer analyzer = new SeverityAnalyzer();
+    return results != null
+        && results.stream()
+            .anyMatch(
+                result ->
+                    SeverityAnalyzer.CRITICAL.equals(
+                        analyzer.getHighestSeverity(result.vulnerabilities())));
+  }
+
   @Override
   @Nullable
-  public Object execute(@NotNull Project project, @NotNull Continuation<? super Unit> continuation) {
+  public Object execute(
+      @NotNull Project project, @NotNull Continuation<? super Unit> continuation) {
     VulnSpotterSettings settings = VulnSpotterSettings.getInstance();
     if (settings == null || !settings.isAnalyzeOnProjectOpen() || project.isDisposed()) {
       return Unit.INSTANCE;
@@ -73,22 +91,5 @@ public final class ProjectOpenScanActivity implements ProjectActivity {
               return null;
             });
     return Unit.INSTANCE;
-  }
-
-  /**
-   * Whether any scan result carries at least one {@link SeverityAnalyzer#CRITICAL} vulnerability.
-   * A result without vulnerabilities (or without severity data) is never critical.
-   *
-   * @param results scan results, may be {@code null}.
-   * @return {@code true} when a critical vulnerability was found.
-   */
-  static boolean hasCriticalResults(List<VulnerabilityScannerService.ScanResult> results) {
-    SeverityAnalyzer analyzer = new SeverityAnalyzer();
-    return results != null
-        && results.stream()
-            .anyMatch(
-                result ->
-                    SeverityAnalyzer.CRITICAL.equals(
-                        analyzer.getHighestSeverity(result.vulnerabilities())));
   }
 }

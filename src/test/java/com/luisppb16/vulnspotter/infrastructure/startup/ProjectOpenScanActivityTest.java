@@ -57,6 +57,26 @@ class ProjectOpenScanActivityTest {
 
   private ProjectOpenScanActivity activity;
 
+  private static OsvVulnerability vulnerabilityWithDatabaseSeverity(String severity) {
+    return new OsvVulnerability(
+        "CVE-2026-0001",
+        "Vulnerable dependency",
+        null,
+        null,
+        null,
+        null,
+        Map.of("severity", severity));
+  }
+
+  private static OsvVulnerability vulnerabilityWithoutSeverity() {
+    return new OsvVulnerability("CVE-2026-0002", null, null, null, null, null, null);
+  }
+
+  private static VulnerabilityScannerService.ScanResult scanResult(OsvVulnerability... vulns) {
+    OsvPackage pkg = new OsvPackage("com.example:library", "Maven", "1.0.0");
+    return new VulnerabilityScannerService.ScanResult(pkg, vulns.length > 0, List.of(vulns));
+  }
+
   @BeforeEach
   void setUp() {
     settingsMock = mockStatic(VulnSpotterSettings.class);
@@ -81,26 +101,6 @@ class ProjectOpenScanActivityTest {
     scannerMock.close();
     alertServiceMock.close();
     notificationsMock.close();
-  }
-
-  private static OsvVulnerability vulnerabilityWithDatabaseSeverity(String severity) {
-    return new OsvVulnerability(
-        "CVE-2026-0001",
-        "Vulnerable dependency",
-        null,
-        null,
-        null,
-        null,
-        Map.of("severity", severity));
-  }
-
-  private static OsvVulnerability vulnerabilityWithoutSeverity() {
-    return new OsvVulnerability("CVE-2026-0002", null, null, null, null, null, null);
-  }
-
-  private static VulnerabilityScannerService.ScanResult scanResult(OsvVulnerability... vulns) {
-    OsvPackage pkg = new OsvPackage("com.example:library", "Maven", "1.0.0");
-    return new VulnerabilityScannerService.ScanResult(pkg, vulns.length > 0, List.of(vulns));
   }
 
   private List<VulnerabilityScannerService.ScanResult> stubSuccessfulScan(

@@ -16,6 +16,7 @@ import jakarta.mail.MessagingException;
 import jakarta.mail.Session;
 import jakarta.mail.internet.InternetAddress;
 import jakarta.mail.internet.MimeMessage;
+import java.io.IOException;
 import java.util.Date;
 import java.util.Properties;
 import java.util.concurrent.CompletableFuture;
@@ -65,6 +66,15 @@ public final class EmailService implements Disposable {
         : null;
   }
 
+  private static ExecutorService newMailExecutor() {
+    return Executors.newSingleThreadExecutor(
+        runnable -> {
+          Thread thread = new Thread(runnable, THREAD_NAME);
+          thread.setDaemon(true);
+          return thread;
+        });
+  }
+
   /**
    * Sends an alert email asynchronously. Fails fast on null arguments; any transport error is
    * surfaced through the returned future, never through a log leak of the SMTP credentials.
@@ -97,8 +107,12 @@ public final class EmailService implements Disposable {
             future.complete(true);
           } catch (MessagingException ex) {
             LOG.warn(
-                "VulnSpotter: email alert delivery to " + config.host() + ":" + config.port()
-                    + " failed: " + ex.getMessage());
+                "VulnSpotter: email alert delivery to "
+                    + config.host()
+                    + ":"
+                    + config.port()
+                    + " failed: "
+                    + ex.getMessage());
             future.completeExceptionally(ex);
           } finally {
             transport.close();
@@ -133,14 +147,5 @@ public final class EmailService implements Disposable {
   @Override
   public void dispose() {
     executor.shutdownNow();
-  }
-
-  private static ExecutorService newMailExecutor() {
-    return Executors.newSingleThreadExecutor(
-        runnable -> {
-          Thread thread = new Thread(runnable, THREAD_NAME);
-          thread.setDaemon(true);
-          return thread;
-        });
   }
 }

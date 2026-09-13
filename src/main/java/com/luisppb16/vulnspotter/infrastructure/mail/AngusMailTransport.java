@@ -22,6 +22,37 @@ public final class AngusMailTransport implements MailTransport {
 
   private Transport transport;
 
+  private static Properties buildProperties(SmtpConfig config) {
+    Properties props = new Properties();
+    props.put("mail.smtp.host", config.host());
+    props.put("mail.smtp.port", String.valueOf(config.port()));
+    props.put("mail.smtp.auth", String.valueOf(config.requiresAuth()));
+    props.put("mail.smtp.connectiontimeout", String.valueOf(CONNECTION_TIMEOUT_MS));
+    props.put("mail.smtp.timeout", String.valueOf(READ_TIMEOUT_MS));
+    props.put("mail.smtp.writetimeout", String.valueOf(WRITE_TIMEOUT_MS));
+    switch (config.security()) {
+      case STARTTLS -> props.put("mail.smtp.starttls.enable", "true");
+      case SSL -> props.put("mail.smtp.ssl.enable", "true");
+      case NONE -> {
+        // No TLS properties for a plain connection.
+      }
+    }
+    return props;
+  }
+
+  private static void closeQuietly(Transport transport) {
+    if (transport == null) {
+      return;
+    }
+    try {
+      if (transport.isConnected()) {
+        transport.close();
+      }
+    } catch (MessagingException ignored) {
+      // Swallow on purpose: closing is best-effort, real failures surface during connect/send.
+    }
+  }
+
   @Override
   public void connect(SmtpConfig config) throws MessagingException {
     Session session = Session.getInstance(buildProperties(config));
@@ -54,36 +85,5 @@ public final class AngusMailTransport implements MailTransport {
     Transport current = transport;
     transport = null;
     closeQuietly(current);
-  }
-
-  private static Properties buildProperties(SmtpConfig config) {
-    Properties props = new Properties();
-    props.put("mail.smtp.host", config.host());
-    props.put("mail.smtp.port", String.valueOf(config.port()));
-    props.put("mail.smtp.auth", String.valueOf(config.requiresAuth()));
-    props.put("mail.smtp.connectiontimeout", String.valueOf(CONNECTION_TIMEOUT_MS));
-    props.put("mail.smtp.timeout", String.valueOf(READ_TIMEOUT_MS));
-    props.put("mail.smtp.writetimeout", String.valueOf(WRITE_TIMEOUT_MS));
-    switch (config.security()) {
-      case STARTTLS -> props.put("mail.smtp.starttls.enable", "true");
-      case SSL -> props.put("mail.smtp.ssl.enable", "true");
-      case NONE -> {
-        // No TLS properties for a plain connection.
-      }
-    }
-    return props;
-  }
-
-  private static void closeQuietly(Transport transport) {
-    if (transport == null) {
-      return;
-    }
-    try {
-      if (transport.isConnected()) {
-        transport.close();
-      }
-    } catch (MessagingException ignored) {
-      // Swallow on purpose: closing is best-effort, real failures surface during connect/send.
-    }
   }
 }

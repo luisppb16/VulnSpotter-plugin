@@ -90,7 +90,7 @@ public final class VersionUtil {
   public static boolean isPrerelease(String version) {
     if (version == null || version.isBlank()) return false;
     for (VersionItem item : parse(version)) {
-      if (item instanceof QualifierItem qual && qualifierRank(qual.value()) < qualifierRank("")) {
+      if (item instanceof QualifierItem(String value) && qualifierRank(value) < qualifierRank("")) {
         return true;
       }
     }
@@ -173,10 +173,10 @@ public final class VersionUtil {
 
     // Trim trailing items equivalent to the plain release (".0", ".RELEASE", ".Final", "ga")
     while (!items.isEmpty()) {
-      VersionItem last = items.get(items.size() - 1);
+      VersionItem last = items.getLast();
       boolean nullValue =
-          (last instanceof NumberItem n && n.value().signum() == 0)
-              || (last instanceof QualifierItem s && s.value().isEmpty());
+          (last instanceof NumberItem(BigInteger value) && value.signum() == 0)
+              || (last instanceof QualifierItem(String qualifier) && qualifier.isEmpty());
       if (!nullValue) break;
       items.remove(items.size() - 1);
     }
