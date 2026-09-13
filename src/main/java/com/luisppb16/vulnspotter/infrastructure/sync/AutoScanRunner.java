@@ -7,11 +7,11 @@
 
 package com.luisppb16.vulnspotter.infrastructure.sync;
 
-import com.intellij.notification.NotificationGroupManager;
-import com.intellij.notification.NotificationType;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
+import com.luisppb16.vulnspotter.application.service.VulnerabilityAlertService;
 import com.luisppb16.vulnspotter.application.service.VulnerabilityScannerService;
+import com.luisppb16.vulnspotter.ui.notification.VulnSpotterNotifications;
 
 /**
  * Shared logic for auto-scans triggered by project sync (Gradle or Maven): runs the scan, stores
@@ -21,7 +21,6 @@ import com.luisppb16.vulnspotter.application.service.VulnerabilityScannerService
 final class AutoScanRunner {
 
   private static final Logger LOG = Logger.getInstance(AutoScanRunner.class);
-  private static final String NOTIFICATION_GROUP_ID = "VulnSpotter Notifications";
 
   private AutoScanRunner() {}
 
@@ -40,16 +39,19 @@ final class AutoScanRunner {
                       .filter(VulnerabilityScannerService.ScanResult::vulnerable)
                       .count();
               if (vulnerableCount > 0 && !project.isDisposed()) {
-                NotificationGroupManager.getInstance()
-                    .getNotificationGroup(NOTIFICATION_GROUP_ID)
-                    .createNotification(
-                        "VulnSpotter",
-                        "Auto-scan found vulnerabilities in "
-                            + vulnerableCount
-                            + (vulnerableCount == 1 ? " dependency." : " dependencies.")
-                            + " Open the VulnSpotter tool window for details.",
-                        NotificationType.WARNING)
-                    .notify(project);
+                VulnSpotterNotifications.notifyWarning(
+                    project,
+                    "VulnSpotter",
+                    "Auto-scan found vulnerabilities in "
+                        + vulnerableCount
+                        + (vulnerableCount == 1 ? " dependency." : " dependencies.")
+                        + " Open the VulnSpotter tool window for details.");
+                VulnerabilityAlertService alertService =
+                    VulnerabilityAlertService.getInstance(project);
+                if (alertService != null) {
+                  alertService.onScanCompleted(
+                      results, VulnerabilityAlertService.ScanTrigger.AUTO_SYNC);
+                }
               }
             })
         .exceptionally(

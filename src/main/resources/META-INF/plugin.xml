@@ -28,10 +28,18 @@
         <li><b>Direct References:</b> One-click access to official security advisories (CVE, GHSA, etc.).</li>
         <li><b>Visual Indicators:</b> Clear visual cues for safe vs. vulnerable packages.</li>
         <li><b>Exclusions:</b> Ignore specific dependencies or CVEs via a <code>.vulnspotterignore</code> file or the Settings page.</li>
+        <li><b>Email Alerts:</b> Receive vulnerability alerts by email after automatic scans, with a configurable SMTP server (host, port, TLS/SSL, credentials) and selectable severities (Critical/High/Medium/Low).</li>
+        <li><b>Analysis on Project Open:</b> Dependencies are scanned automatically when the project opens, with an IDE notification when pending critical CVEs are found.</li>
     </ul>
     ]]></description>
 
     <change-notes><![CDATA[
+        <h3>1.0.2</h3>
+        <ul>
+            <li><b>Email Alerts:</b> Optionally receive vulnerability alerts by email after every automatic scan (project sync and project open). Configurable SMTP server (host, port, TLS/SSL, username, password), recipient, and selectable severities (Critical/High/Medium/Low). Alerts are de-duplicated by CVE id/alias so an already-notified advisory is never re-sent. The SMTP password is stored in plain text in the IDE settings file — use a dedicated app password.</li>
+            <li><b>Automatic Analysis on Project Open:</b> The project's dependencies are scanned when it opens (toggle enabled by default) and an IDE notification is raised when pending critical CVEs are found.</li>
+            <li><b>Fix:</b> Added the missing <code>displayName</code> to the VulnSpotter settings page, removing the PluginException raised when the Settings dialog was opened.</li>
+        </ul>
         <h3>1.0.0</h3>
         <ul>
             <li><b>Initial Release:</b> First release of VulnSpotter on the JetBrains Marketplace.</li>
@@ -53,9 +61,13 @@
 
     <extensions defaultExtensionNs="com.intellij">
         <applicationService serviceImplementation="com.luisppb16.vulnspotter.settings.VulnSpotterSettings"/>
+        <applicationService serviceImplementation="com.luisppb16.vulnspotter.infrastructure.mail.EmailService"/>
+
+        <postStartupActivity implementation="com.luisppb16.vulnspotter.infrastructure.startup.ProjectOpenScanActivity"/>
 
         <applicationConfigurable parentId="tools"
                                  id="vulnspotter.settings"
+                                 displayName="VulnSpotter"
                                  instance="com.luisppb16.vulnspotter.settings.VulnSpotterConfigurable"/>
 
         <externalSystemTaskNotificationListener

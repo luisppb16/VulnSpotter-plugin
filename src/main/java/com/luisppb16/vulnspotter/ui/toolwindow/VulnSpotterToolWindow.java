@@ -10,8 +10,6 @@ package com.luisppb16.vulnspotter.ui.toolwindow;
 import com.intellij.icons.AllIcons;
 import com.intellij.ide.BrowserUtil;
 import com.intellij.ide.ui.LafManagerListener;
-import com.intellij.notification.NotificationGroupManager;
-import com.intellij.notification.NotificationType;
 import com.intellij.openapi.Disposable;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.fileChooser.FileChooserFactory;
@@ -43,6 +41,7 @@ import com.luisppb16.vulnspotter.domain.service.FixedVersionResolver;
 import com.luisppb16.vulnspotter.domain.service.SeverityAnalyzer;
 import com.luisppb16.vulnspotter.infrastructure.report.ReportExportService;
 import com.luisppb16.vulnspotter.infrastructure.report.VulnerabilityReportBuilder;
+import com.luisppb16.vulnspotter.ui.notification.VulnSpotterNotifications;
 import com.luisppb16.vulnspotter.util.HtmlEscaper;
 import java.awt.*;
 import java.awt.datatransfer.StringSelection;
@@ -487,27 +486,19 @@ public final class VulnSpotterToolWindow implements Disposable {
                 ApplicationManager.getApplication()
                     .invokeLater(
                         () ->
-                            NotificationGroupManager.getInstance()
-                                .getNotificationGroup("VulnSpotter Notifications")
-                                .createNotification(
-                                    "VulnSpotter",
-                                    "Added \""
-                                        + entry
-                                        + "\" to .vulnspotterignore. Re-scan to apply.",
-                                    NotificationType.INFORMATION)
-                                .notify(project),
+                            VulnSpotterNotifications.notifyInfo(
+                                project,
+                                "VulnSpotter",
+                                "Added \"" + entry + "\" to .vulnspotterignore. Re-scan to apply."),
                         project.getDisposed());
               } catch (IOException ex) {
                 ApplicationManager.getApplication()
                     .invokeLater(
                         () ->
-                            NotificationGroupManager.getInstance()
-                                .getNotificationGroup("VulnSpotter Notifications")
-                                .createNotification(
-                                    "VulnSpotter",
-                                    "Could not update .vulnspotterignore: " + ex.getMessage(),
-                                    NotificationType.ERROR)
-                                .notify(project),
+                            VulnSpotterNotifications.notifyError(
+                                project,
+                                "VulnSpotter",
+                                "Could not update .vulnspotterignore: " + ex.getMessage()),
                         project.getDisposed());
               }
             });
@@ -659,18 +650,15 @@ public final class VulnSpotterToolWindow implements Disposable {
       statusLabel.setText(
           vulnerableCount + " vulnerable of " + results.size() + " dependencies scanned");
       if (vulnerableCount > 0) {
-        NotificationGroupManager.getInstance()
-            .getNotificationGroup("VulnSpotter Notifications")
-            .createNotification(
-                "VulnSpotter found vulnerabilities",
-                vulnerableCount
-                    + " vulnerable dependenc"
-                    + (vulnerableCount == 1 ? "y" : "ies")
-                    + " of "
-                    + results.size()
-                    + " scanned. Open the VulnSpotter tool window for remediation advice.",
-                NotificationType.WARNING)
-            .notify(project);
+        VulnSpotterNotifications.notifyWarning(
+            project,
+            "VulnSpotter found vulnerabilities",
+            vulnerableCount
+                + " vulnerable dependenc"
+                + (vulnerableCount == 1 ? "y" : "ies")
+                + " of "
+                + results.size()
+                + " scanned. Open the VulnSpotter tool window for remediation advice.");
       }
     } else {
       statusLabel.setText("No dependencies found — make sure the project is synced");
@@ -706,13 +694,10 @@ public final class VulnSpotterToolWindow implements Disposable {
               cause.getMessage() != null ? cause.getMessage() : cause.getClass().getSimpleName();
         };
     statusLabel.setText("Scan failed: " + message);
-    NotificationGroupManager.getInstance()
-        .getNotificationGroup("VulnSpotter Notifications")
-        .createNotification(
-            "VulnSpotter scan failed",
-            "The vulnerability scan could not be completed: " + message,
-            NotificationType.ERROR)
-        .notify(project);
+    VulnSpotterNotifications.notifyError(
+        project,
+        "VulnSpotter scan failed",
+        "The vulnerability scan could not be completed: " + message);
   }
 
   private void showExportMenu() {
@@ -792,11 +777,8 @@ public final class VulnSpotterToolWindow implements Disposable {
                                   ? ex.getMessage()
                                   : ex.getClass().getSimpleName();
                           statusLabel.setText("Export failed: " + message);
-                          NotificationGroupManager.getInstance()
-                              .getNotificationGroup("VulnSpotter Notifications")
-                              .createNotification(
-                                  "VulnSpotter export failed", message, NotificationType.ERROR)
-                              .notify(project);
+                          VulnSpotterNotifications.notifyError(
+                              project, "VulnSpotter export failed", message);
                         },
                         project.getDisposed());
               } finally {

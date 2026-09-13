@@ -12,7 +12,7 @@ plugins {
 }
 
 group = 'com.luisppb16'
-version = '1.0.1'
+version = '1.0.2'
 
 repositories {
     mavenCentral()
@@ -24,6 +24,9 @@ repositories {
 dependencies {
     // JSON - Jackson
     implementation 'com.fasterxml.jackson.core:jackson-databind:2.21.5'
+
+    // SMTP email alerts (Jakarta Mail reference implementation, actively maintained)
+    implementation 'org.eclipse.angus:angus-mail:2.0.5'
 
     // CVSS base-score calculation from OSV severity vectors (v2/v3/v3.1/v4)
     implementation 'us.springett:cvss-calculator:1.5.1'

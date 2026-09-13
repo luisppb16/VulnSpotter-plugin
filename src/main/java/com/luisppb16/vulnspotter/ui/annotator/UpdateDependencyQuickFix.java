@@ -8,7 +8,6 @@
 package com.luisppb16.vulnspotter.ui.annotator;
 
 import com.intellij.codeInsight.intention.IntentionAction;
-import com.intellij.notification.NotificationGroupManager;
 import com.intellij.notification.NotificationType;
 import com.intellij.openapi.editor.Document;
 import com.intellij.openapi.editor.Editor;
@@ -22,6 +21,7 @@ import com.intellij.psi.xml.XmlFile;
 import com.intellij.psi.xml.XmlTag;
 import com.intellij.util.IncorrectOperationException;
 import com.luisppb16.vulnspotter.domain.service.VersionUtil;
+import com.luisppb16.vulnspotter.ui.notification.VulnSpotterNotifications;
 import org.jetbrains.annotations.NotNull;
 
 /**
@@ -36,8 +36,6 @@ import org.jetbrains.annotations.NotNull;
  * declared indirectly (property/catalog) and cannot be auto-upgraded.
  */
 public class UpdateDependencyQuickFix implements IntentionAction {
-
-  private static final String NOTIFICATION_GROUP_ID = "VulnSpotter Notifications";
 
   private final String packageName; // "group:artifact"
   private final String currentVersion;
@@ -65,10 +63,11 @@ public class UpdateDependencyQuickFix implements IntentionAction {
   }
 
   private static void notify(Project project, String message, NotificationType type) {
-    NotificationGroupManager.getInstance()
-        .getNotificationGroup(NOTIFICATION_GROUP_ID)
-        .createNotification("VulnSpotter", message, type)
-        .notify(project);
+    switch (type) {
+      case INFORMATION -> VulnSpotterNotifications.notifyInfo(project, "VulnSpotter", message);
+      case WARNING -> VulnSpotterNotifications.notifyWarning(project, "VulnSpotter", message);
+      case ERROR -> VulnSpotterNotifications.notifyError(project, "VulnSpotter", message);
+    }
   }
 
   @Override

@@ -24,10 +24,18 @@ without leaving the IDE.
 - **Report export** — Export scan results to **HTML**, **PDF**, **CSV**, **JSON**, **SARIF 2.1.0** and **Markdown**
   from the tool window.
 - **Notifications** — Instant IDE notifications about security findings and scan failures.
+- **Email alerts** — Optionally receive vulnerability alerts by email after every automatic scan (after project sync and
+  on project open). Configure your own SMTP server (host, port, TLS/SSL, username and password), the recipient, and
+  which severities trigger an alert through the Critical/High/Medium/Low checkboxes. Alerts are de-duplicated by CVE
+  id/alias: a vulnerability already notified in the current project session is never re-sent.
+  ⚠️ **Warning:** the SMTP password is stored **in plain text** in `vulnSpotterSettings.xml` — use a dedicated
+  app password for this account, not your personal one.
+- **Automatic analysis on project open** — Scans the project's dependencies when it opens and raises an IDE notification
+  if pending critical CVEs are found. Toggle is **enabled by default**.
 - **Auto-scan after project sync** — Optionally re-scan after every Gradle or Maven sync. Opt-in and **disabled by
   default**.
-- **Settings page** — **Settings → Tools → VulnSpotter**: auto-scan, cache duration, minimum severity shown, and ignored
-  CVE/GHSA ids.
+- **Settings page** — **Settings → Tools → VulnSpotter**: auto-scan, cache duration, minimum severity shown, ignored
+  CVE/GHSA ids, and email alerts (SMTP host, port, security, credentials, recipient and severities).
 - **Exclusions** — Ignore specific dependencies via a `.vulnspotterignore` file in the project root (glob patterns
   supported) or ignore individual CVEs from the Settings page.
 
