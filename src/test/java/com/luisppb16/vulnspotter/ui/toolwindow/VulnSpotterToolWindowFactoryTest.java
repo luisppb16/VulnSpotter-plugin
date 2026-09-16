@@ -10,6 +10,7 @@ package com.luisppb16.vulnspotter.ui.toolwindow;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
 import com.intellij.openapi.Disposable;
@@ -17,6 +18,8 @@ import com.intellij.openapi.application.Application;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.application.ModalityState;
 import com.intellij.openapi.project.Project;
+import com.intellij.openapi.util.Condition;
+import com.intellij.openapi.util.Disposer;
 import com.intellij.openapi.wm.ToolWindow;
 import com.intellij.ui.content.Content;
 import com.intellij.ui.content.ContentFactory;
@@ -29,6 +32,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.MockedStatic;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -71,11 +75,15 @@ class VulnSpotterToolWindowFactoryTest {
         .when(() -> VulnerabilityScannerService.getInstance(project))
         .thenReturn(scannerService);
     applicationManagerMock.when(ApplicationManager::getApplication).thenReturn(application);
-    // The tool window constructor subscribes to the application message bus; stub it so the factory
-    // can build the panel without a running application.
+    // The deferred runnable subscribes to the application message bus; stub it so the factory can
+    // build the panel without a running application.
     when(application.getMessageBus()).thenReturn(messageBus);
     when(messageBus.connect(any(Disposable.class))).thenReturn(messageBusConnection);
+    when(project.getDisposed()).thenReturn(disposedProject -> false);
+    // The panel construction touches JBScrollPane/JBScrollBar internals that query modality state;
+    // stub both accessors so it can build without a running application.
     modalityStateMock.when(ModalityState::defaultModalityState).thenReturn(modalityState);
+    modalityStateMock.when(ModalityState::nonModal).thenReturn(modalityState);
   }
 
   @AfterEach
@@ -88,10 +96,42 @@ class VulnSpotterToolWindowFactoryTest {
 
   @Test
   void testCreateToolWindowContent() {
+    // Given: a factory whose panel construction is deferred until the IDE is idle
     VulnSpotterToolWindowFactory factory = new VulnSpotterToolWindowFactory();
+    ArgumentCaptor<Runnable> runnableCaptor = ArgumentCaptor.forClass(Runnable.class);
+
+    // When: the tool window content is created during startup
     factory.createToolWindowContent(project, toolWindow);
 
+    // Then: only the content shell with placeholder is added synchronously; the panel is built
+    // later
     verify(contentFactory).createContent(any(JComponent.class), eq(""), eq(false));
     verify(contentManager).addContent(content);
+    verify(application)
+        .invokeLater(runnableCaptor.capture(), eq(modalityState), any(Condition.class));
+    runnableCaptor.getValue().run();
+    verify(content).setComponent(any(JComponent.class));
+    verify(content)
+        .putUserData(
+            eq(VulnSpotterToolWindowFactory.TOOL_WINDOW_KEY), any(VulnSpotterToolWindow.class));
+    verify(content).setDisposer(any(VulnSpotterToolWindow.class));
+  }
+
+  @Test
+  void testCreateToolWindowContentDoesNotBuildWhenContentDisposed() {
+    // Given: a factory whose content shell is disposed before the deferred runnable runs
+    VulnSpotterToolWindowFactory factory = new VulnSpotterToolWindowFactory();
+    ArgumentCaptor<Runnable> runnableCaptor = ArgumentCaptor.forClass(Runnable.class);
+    factory.createToolWindowContent(project, toolWindow);
+    verify(application)
+        .invokeLater(runnableCaptor.capture(), eq(modalityState), any(Condition.class));
+    Disposer.dispose(content);
+
+    // When: the deferred runnable finally runs
+    runnableCaptor.getValue().run();
+
+    // Then: the panel is never built nor attached to the disposed content
+    verify(content, never()).setComponent(any(JComponent.class));
+    verify(content, never()).setDisposer(any(VulnSpotterToolWindow.class));
   }
 }
