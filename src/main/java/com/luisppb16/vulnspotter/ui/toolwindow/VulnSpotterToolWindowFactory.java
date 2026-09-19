@@ -42,7 +42,8 @@ public class VulnSpotterToolWindowFactory implements ToolWindowFactory, DumbAwar
     // construction until the IDE is idle. The <clinit> itself is only safe once HttpConfigurable
     // is initialized outside it: its first creation requests ProxyMigrationService, a nested
     // service lookup the platform rejects from a class initializer ("Class initialization must
-    // not depend on services"). JcefDetailsPanel pre-initializes HttpConfigurable for that.
+    // not depend on services"). JcefDetailsPanel resolves ProxySettings for that, which creates
+    // HttpConfigurable outside any class initializer.
     ApplicationManager.getApplication()
         .invokeLater(
             () -> {
