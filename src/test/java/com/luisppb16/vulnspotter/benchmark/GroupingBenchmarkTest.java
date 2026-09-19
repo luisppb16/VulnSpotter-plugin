@@ -7,6 +7,7 @@
 
 package com.luisppb16.vulnspotter.benchmark;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.luisppb16.vulnspotter.domain.model.OsvPackage;
@@ -17,8 +18,16 @@ import java.util.Map;
 import java.util.stream.Collectors;
 import org.junit.jupiter.api.Test;
 
-/** Benchmark comparing String concatenation vs Record key for grouping. */
+/**
+ * Benchmark comparing String concatenation vs Record key for grouping.
+ *
+ * <p>Both implementations alternate within each measured round so JIT/GC state affects both the
+ * same way; a single-block comparison is order-biased and can swing the result by tens of percent.
+ */
 public class GroupingBenchmarkTest {
+
+  private static final int WARMUP_ROUNDS = 5;
+  private static final int MEASURED_ROUNDS = 20;
 
   @Test
   public void benchmarkGrouping() {
@@ -31,54 +40,60 @@ public class GroupingBenchmarkTest {
       packages.add(new OsvPackage("pkg-" + id, "Maven", "1.0." + id));
     }
 
-    // Warmup
-    runStringConcat(packages);
-    runRecordKey(packages);
+    // Groupings must be equivalent; otherwise the benchmark compares different work
+    assertGroupingsEquivalent(packages);
 
-    // Benchmark String Concat
-    long startString = System.nanoTime();
-    for (int i = 0; i < 10; i++) {
+    // Warmup, alternating both implementations
+    for (int round = 0; round < WARMUP_ROUNDS; round++) {
       runStringConcat(packages);
-    }
-    long durationString = System.nanoTime() - startString;
-
-    // Benchmark Record Key
-    long startRecord = System.nanoTime();
-    for (int i = 0; i < 10; i++) {
       runRecordKey(packages);
     }
-    long durationRecord = System.nanoTime() - startRecord;
 
-    System.out.printf("String Concat Duration: %.2f ms%n", durationString / 1_000_000.0);
-    System.out.printf("Record Key Duration:    %.2f ms%n", durationRecord / 1_000_000.0);
-    System.out.printf(
-        "Improvement:            %.2f%%%n", (1.0 - (double) durationRecord / durationString) * 100);
+    // Measured rounds, alternating to cancel JIT/GC drift
+    long durationString = 0;
+    long durationRecord = 0;
+    for (int round = 0; round < MEASURED_ROUNDS; round++) {
+      long startString = System.nanoTime();
+      runStringConcat(packages);
+      durationString += System.nanoTime() - startString;
 
-    // Verify Record is not significantly slower (it should be faster)
-    // Note: In some microbenchmarks with simple strings, the difference might be small,
-    // but allocation-wise Record is better.
-    // We assert that it's at least within 120% of string time (allowing some noise) but ideally
-    // faster.
-    // If the improvement is negative, it means Record is slower.
+      long startRecord = System.nanoTime();
+      runRecordKey(packages);
+      durationRecord += System.nanoTime() - startRecord;
+    }
 
-    // However, for the purpose of this task, we expect it to be faster or comparable.
-    assertTrue(
-        durationRecord < durationString * 1.2, "Record key should not be significantly slower");
+    double stringMs = durationString / 1_000_000.0;
+    double recordMs = durationRecord / 1_000_000.0;
+    System.out.printf("String Concat Duration: %.2f ms%n", stringMs);
+    System.out.printf("Record Key Duration:    %.2f ms%n", recordMs);
+    System.out.printf("Improvement:            %.2f%%%n", (1.0 - recordMs / stringMs) * 100);
+
+    assertTrue(recordMs < stringMs * 1.2, "Record key should not be significantly slower");
   }
 
-  private void runStringConcat(List<OsvPackage> packages) {
-    Map<String, List<OsvPackage>> grouped =
-        packages.stream()
-            .collect(
-                Collectors.groupingBy(
-                    pkg -> pkg.name() + ":" + pkg.version() + ":" + pkg.ecosystem()));
+  private void assertGroupingsEquivalent(List<OsvPackage> packages) {
+    Map<String, List<OsvPackage>> byString = runStringConcat(packages);
+    Map<PackageKey, List<OsvPackage>> byRecord = runRecordKey(packages);
+
+    assertEquals(byString.size(), byRecord.size(), "Group count must match");
+    byString.forEach(
+        (key, expected) -> {
+          String[] parts = key.split(":", 3);
+          List<OsvPackage> actual = byRecord.get(new PackageKey(parts[0], parts[1], parts[2]));
+          assertEquals(expected, actual, "Group " + key + " must contain the same packages");
+        });
   }
 
-  private void runRecordKey(List<OsvPackage> packages) {
-    Map<PackageKey, List<OsvPackage>> grouped =
-        packages.stream()
-            .collect(
-                Collectors.groupingBy(
-                    pkg -> new PackageKey(pkg.name(), pkg.version(), pkg.ecosystem())));
+  private Map<String, List<OsvPackage>> runStringConcat(List<OsvPackage> packages) {
+    return packages.stream()
+        .collect(
+            Collectors.groupingBy(pkg -> pkg.name() + ":" + pkg.version() + ":" + pkg.ecosystem()));
+  }
+
+  private Map<PackageKey, List<OsvPackage>> runRecordKey(List<OsvPackage> packages) {
+    return packages.stream()
+        .collect(
+            Collectors.groupingBy(
+                pkg -> new PackageKey(pkg.name(), pkg.version(), pkg.ecosystem())));
   }
 }
