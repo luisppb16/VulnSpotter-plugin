@@ -11,6 +11,7 @@ import com.intellij.ide.BrowserUtil;
 import com.intellij.openapi.util.Disposer;
 import com.intellij.ui.jcef.JBCefBrowser;
 import com.intellij.ui.jcef.JBCefClient;
+import com.intellij.ui.jcef.JBCefProxySettings;
 import com.luisppb16.vulnspotter.ui.toolwindow.DetailsPanel;
 import javax.swing.JComponent;
 import org.cef.browser.CefBrowser;
@@ -30,6 +31,12 @@ final class JcefDetailsPanel implements DetailsPanel {
   private final JBCefBrowser browser;
 
   JcefDetailsPanel() {
+    // JBCefApp's <clinit> resolves proxy settings through JBCefProxySettings, which creates
+    // HttpConfigurable; the first creation of HttpConfigurable requests ProxyMigrationService,
+    // and the platform rejects that nested service lookup from <clinit> ("Class initialization
+    // must not depend on services"). Create the proxy settings here, outside any class
+    // initializer, so the <clinit> only performs a cached lookup.
+    JBCefProxySettings.getInstance();
     this.browser = new JBCefBrowser();
     Disposer.register(this, browser);
 

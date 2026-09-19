@@ -38,9 +38,11 @@ public class VulnSpotterToolWindowFactory implements ToolWindowFactory, DumbAwar
     }
 
     // Building the panel constructs a JBCefBrowser, which triggers JBCefApp's class initializer.
-    // createToolWindowContent runs during early IDE startup (ToolWindowSetInitializer), and the
-    // platform rejects service lookups from <clinit> ("Class initialization must not depend on
-    // services"). Defer construction until the IDE is idle.
+    // createToolWindowContent runs during early IDE startup (ToolWindowSetInitializer), so defer
+    // construction until the IDE is idle. The <clinit> itself is only safe once HttpConfigurable
+    // is initialized outside it: its first creation requests ProxyMigrationService, a nested
+    // service lookup the platform rejects from a class initializer ("Class initialization must
+    // not depend on services"). JcefDetailsPanel pre-initializes HttpConfigurable for that.
     ApplicationManager.getApplication()
         .invokeLater(
             () -> {
