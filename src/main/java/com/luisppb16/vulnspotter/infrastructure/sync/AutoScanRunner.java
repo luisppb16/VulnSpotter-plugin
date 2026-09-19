@@ -9,7 +9,6 @@ package com.luisppb16.vulnspotter.infrastructure.sync;
 
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
-import com.luisppb16.vulnspotter.application.service.VulnerabilityAlertService;
 import com.luisppb16.vulnspotter.application.service.VulnerabilityScannerService;
 import com.luisppb16.vulnspotter.ui.notification.VulnSpotterNotifications;
 
@@ -46,12 +45,6 @@ final class AutoScanRunner {
                         + vulnerableCount
                         + (vulnerableCount == 1 ? " dependency." : " dependencies.")
                         + " Open the VulnSpotter tool window for details.");
-                VulnerabilityAlertService alertService =
-                    VulnerabilityAlertService.getInstance(project);
-                if (alertService != null) {
-                  alertService.onScanCompleted(
-                      results, VulnerabilityAlertService.ScanTrigger.AUTO_SYNC);
-                }
               }
             })
         .exceptionally(

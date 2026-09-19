@@ -10,7 +10,6 @@ package com.luisppb16.vulnspotter.infrastructure.startup;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.startup.ProjectActivity;
-import com.luisppb16.vulnspotter.application.service.VulnerabilityAlertService;
 import com.luisppb16.vulnspotter.application.service.VulnerabilityScannerService;
 import com.luisppb16.vulnspotter.domain.service.SeverityAnalyzer;
 import com.luisppb16.vulnspotter.settings.VulnSpotterSettings;
@@ -24,8 +23,7 @@ import org.jetbrains.annotations.Nullable;
 /**
  * Runs a vulnerability scan when a project is opened, if the {@code analyzeOnProjectOpen} setting
  * is enabled. The scan runs asynchronously: when it completes, the results are stored in the
- * scanner service, handed to the {@link VulnerabilityAlertService} (email alerts) and, when a
- * critical vulnerability was found, surfaced through a warning balloon.
+ * scanner service and, when a critical vulnerability was found, surfaced through a warning balloon.
  *
  * <p>Every exit path is safe: a missing settings service (headless), a disabled toggle or a
  * disposed project simply skip the scan.
@@ -71,12 +69,6 @@ public final class ProjectOpenScanActivity implements ProjectActivity {
                 return;
               }
               scanner.updateResults(results);
-              VulnerabilityAlertService alertService =
-                  VulnerabilityAlertService.getInstance(project);
-              if (alertService != null) {
-                alertService.onScanCompleted(
-                    results, VulnerabilityAlertService.ScanTrigger.PROJECT_OPEN);
-              }
               if (hasCriticalResults(results)) {
                 VulnSpotterNotifications.notifyWarning(
                     project,

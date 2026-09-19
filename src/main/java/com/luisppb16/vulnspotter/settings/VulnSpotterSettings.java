@@ -15,7 +15,6 @@ import com.intellij.openapi.components.Storage;
 import com.intellij.util.xmlb.XmlSerializerUtil;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Objects;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -27,16 +26,6 @@ public class VulnSpotterSettings implements PersistentStateComponent<VulnSpotter
   private List<String> ignoredCves = new ArrayList<>();
   private boolean autoScanOnSync = false;
   private boolean analyzeOnProjectOpen = true;
-  private boolean emailNotificationsEnabled = false;
-  private String notificationEmail = "";
-  private List<String> emailSeverities = new ArrayList<>(List.of("CRITICAL", "HIGH"));
-  private String smtpHost = "";
-  private int smtpPort = 587;
-  // Valid values: NONE | STARTTLS | SSL.
-  private String smtpSecurity = "STARTTLS";
-  private String smtpUsername = "";
-  // Stored in plain text in the IDE settings file. Do not reuse a personal password.
-  private String smtpPassword = "";
 
   public static VulnSpotterSettings getInstance() {
     Application app = ApplicationManager.getApplication();
@@ -81,70 +70,6 @@ public class VulnSpotterSettings implements PersistentStateComponent<VulnSpotter
 
   public void setAnalyzeOnProjectOpen(boolean analyzeOnProjectOpen) {
     this.analyzeOnProjectOpen = analyzeOnProjectOpen;
-  }
-
-  public boolean isEmailNotificationsEnabled() {
-    return emailNotificationsEnabled;
-  }
-
-  public void setEmailNotificationsEnabled(boolean emailNotificationsEnabled) {
-    this.emailNotificationsEnabled = emailNotificationsEnabled;
-  }
-
-  public String getNotificationEmail() {
-    return notificationEmail;
-  }
-
-  public void setNotificationEmail(String notificationEmail) {
-    this.notificationEmail = notificationEmail;
-  }
-
-  public List<String> getEmailSeverities() {
-    return emailSeverities;
-  }
-
-  public void setEmailSeverities(List<String> emailSeverities) {
-    this.emailSeverities = Objects.requireNonNullElse(emailSeverities, new ArrayList<>());
-  }
-
-  public String getSmtpHost() {
-    return smtpHost;
-  }
-
-  public void setSmtpHost(String smtpHost) {
-    this.smtpHost = smtpHost;
-  }
-
-  public int getSmtpPort() {
-    return smtpPort;
-  }
-
-  public void setSmtpPort(int smtpPort) {
-    this.smtpPort = smtpPort;
-  }
-
-  public String getSmtpSecurity() {
-    return smtpSecurity;
-  }
-
-  public void setSmtpSecurity(String smtpSecurity) {
-    this.smtpSecurity = smtpSecurity;
-  }
-
-  public String getSmtpUsername() {
-    return smtpUsername;
-  }
-
-  public void setSmtpUsername(String smtpUsername) {
-    this.smtpUsername = smtpUsername;
-  }
-
-  public String getSmtpPassword() {
-    return smtpPassword;
-  }
-
-  public void setSmtpPassword(String smtpPassword) {
-    this.smtpPassword = smtpPassword;
   }
 
   @Nullable

@@ -17,7 +17,6 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.intellij.openapi.project.Project;
-import com.luisppb16.vulnspotter.application.service.VulnerabilityAlertService;
 import com.luisppb16.vulnspotter.application.service.VulnerabilityScannerService;
 import com.luisppb16.vulnspotter.domain.model.OsvPackage;
 import com.luisppb16.vulnspotter.domain.model.OsvVulnerability;
@@ -46,13 +45,11 @@ class ProjectOpenScanActivityTest {
 
   @Mock private VulnSpotterSettings settings;
   @Mock private VulnerabilityScannerService scanner;
-  @Mock private VulnerabilityAlertService alertService;
   @Mock private Project project;
   @Mock private Continuation<Unit> continuation;
 
   private MockedStatic<VulnSpotterSettings> settingsMock;
   private MockedStatic<VulnerabilityScannerService> scannerMock;
-  private MockedStatic<VulnerabilityAlertService> alertServiceMock;
   private MockedStatic<VulnSpotterNotifications> notificationsMock;
 
   private ProjectOpenScanActivity activity;
@@ -81,7 +78,6 @@ class ProjectOpenScanActivityTest {
   void setUp() {
     settingsMock = mockStatic(VulnSpotterSettings.class);
     scannerMock = mockStatic(VulnerabilityScannerService.class);
-    alertServiceMock = mockStatic(VulnerabilityAlertService.class);
     notificationsMock = mockStatic(VulnSpotterNotifications.class);
 
     activity = new ProjectOpenScanActivity();
@@ -90,16 +86,12 @@ class ProjectOpenScanActivityTest {
     when(settings.isAnalyzeOnProjectOpen()).thenReturn(true);
     when(project.isDisposed()).thenReturn(false);
     scannerMock.when(() -> VulnerabilityScannerService.getInstance(project)).thenReturn(scanner);
-    alertServiceMock
-        .when(() -> VulnerabilityAlertService.getInstance(project))
-        .thenReturn(alertService);
   }
 
   @AfterEach
   void tearDown() {
     settingsMock.close();
     scannerMock.close();
-    alertServiceMock.close();
     notificationsMock.close();
   }
 
@@ -122,7 +114,6 @@ class ProjectOpenScanActivityTest {
     // Then: the scan is never triggered.
     assertThat(result).isEqualTo(Unit.INSTANCE);
     scannerMock.verify(() -> VulnerabilityScannerService.getInstance(project), never());
-    alertServiceMock.verify(() -> VulnerabilityAlertService.getInstance(project), never());
   }
 
   @Test
@@ -137,7 +128,6 @@ class ProjectOpenScanActivityTest {
     // Then: the scan is never triggered.
     assertThat(result).isEqualTo(Unit.INSTANCE);
     scannerMock.verify(() -> VulnerabilityScannerService.getInstance(project), never());
-    alertServiceMock.verify(() -> VulnerabilityAlertService.getInstance(project), never());
   }
 
   @Test
@@ -152,12 +142,11 @@ class ProjectOpenScanActivityTest {
     // Then: no scan is started.
     assertThat(result).isEqualTo(Unit.INSTANCE);
     verify(scanner, never()).scanDependencies();
-    alertServiceMock.verify(() -> VulnerabilityAlertService.getInstance(project), never());
   }
 
   @Test
-  @DisplayName("execute scans when enabled and reports results to the alert service")
-  void executeScansAndReportsWhenEnabled() {
+  @DisplayName("execute scans when enabled and stores the results")
+  void executeScansAndStoresResultsWhenEnabled() {
     // Given: the toggle is on and the scan completes without critical findings.
     List<VulnerabilityScannerService.ScanResult> results =
         stubSuccessfulScan(vulnerabilityWithDatabaseSeverity(SeverityAnalyzer.HIGH));
@@ -165,14 +154,11 @@ class ProjectOpenScanActivityTest {
     // When: the project-open activity runs.
     Object result = activity.execute(project, continuation);
 
-    // Then: the scan runs, the results are stored and handed to the alert service, with no
-    // critical warning.
+    // Then: the scan runs, the results are stored and no critical warning is shown.
     assertThat(result).isEqualTo(Unit.INSTANCE);
     scannerMock.verify(() -> VulnerabilityScannerService.getInstance(project));
     verify(scanner).scanDependencies();
     verify(scanner).updateResults(results);
-    verify(alertService)
-        .onScanCompleted(results, VulnerabilityAlertService.ScanTrigger.PROJECT_OPEN);
     notificationsMock.verify(
         () -> VulnSpotterNotifications.notifyWarning(any(), anyString(), anyString()), never());
   }
