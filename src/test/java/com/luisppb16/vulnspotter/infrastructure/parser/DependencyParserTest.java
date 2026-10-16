@@ -12,6 +12,8 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.mockStatic;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.intellij.openapi.externalSystem.model.DataNode;
@@ -36,6 +38,7 @@ import java.util.Collections;
 import java.util.List;
 import org.jetbrains.idea.maven.model.MavenArtifact;
 import org.jetbrains.idea.maven.model.MavenArtifactNode;
+import org.jetbrains.idea.maven.model.MavenArtifactState;
 import org.jetbrains.idea.maven.project.MavenProject;
 import org.jetbrains.idea.maven.project.MavenProjectsManager;
 import org.jetbrains.plugins.gradle.util.GradleConstants;
@@ -45,6 +48,8 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.mockito.Mock;
 import org.mockito.MockedStatic;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -114,6 +119,7 @@ class DependencyParserTest {
       when(artifact.getVersion()).thenReturn("1.0.0");
 
       MavenArtifactNode node = mock(MavenArtifactNode.class);
+      when(node.getState()).thenReturn(MavenArtifactState.ADDED);
       when(node.getArtifact()).thenReturn(artifact);
       when(node.getDependencies()).thenReturn(new ArrayList<>()); // No children
 
@@ -127,6 +133,242 @@ class DependencyParserTest {
       assertThat(results.get(0).name()).isEqualTo("com.example:lib");
       assertThat(results.get(0).version()).isEqualTo("1.0.0");
       assertThat(results.get(0).ecosystem()).isEqualTo("Maven");
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = MavenArtifactState.class, mode = EnumSource.Mode.EXCLUDE, names = "ADDED")
+    @DisplayName("should_prune_mediated_nodes_with_their_subtree")
+    void shouldPruneMediatedNodesWithTheirSubtree(MavenArtifactState lostState) {
+      // Given: this path lost the conflict/duplicate mediation between dependency paths — a common
+      // outcome in multi-module projects, e.g. when a parent POM manages the version and a nearer
+      // path wins with another one. Only fully-ADDED paths are on the effective classpath, so the
+      // loser and its subtree must never reach OSV.
+      MavenArtifact lostArtifact = mock(MavenArtifact.class);
+      when(lostArtifact.getGroupId()).thenReturn("com.example");
+      when(lostArtifact.getArtifactId()).thenReturn("loser");
+      when(lostArtifact.getVersion()).thenReturn("1.0.0");
+
+      MavenArtifactNode loserNode = mock(MavenArtifactNode.class);
+      when(loserNode.getState()).thenReturn(lostState);
+      when(loserNode.getArtifact()).thenReturn(lostArtifact);
+      MavenArtifactNode ghostNode = addedNode("com.example", "ghost", "9.9.9", List.of());
+      when(loserNode.getDependencies()).thenReturn(List.of(ghostNode)); // must never be traversed
+
+      MavenArtifactNode siblingNode = addedNode("com.example", "real", "2.0.0", List.of());
+      MavenArtifactNode rootNode =
+          addedNode("com.example", "root", "1.0.0", List.of(loserNode, siblingNode));
+
+      when(mavenProjectsManager.hasProjects()).thenReturn(true);
+      MavenProject mavenProject = mock(MavenProject.class);
+      when(mavenProjectsManager.getProjects()).thenReturn(List.of(mavenProject));
+      when(mavenProject.getDependencyTree()).thenReturn(List.of(rootNode));
+
+      // When
+      List<OsvPackage> results = DependencyParser.parseDependencies(project);
+
+      // Then
+      assertThat(results)
+          .extracting(OsvPackage::name)
+          .containsExactlyInAnyOrder("com.example:real", "com.example:root");
+      verify(loserNode, never()).getDependencies();
+    }
+
+    @Test
+    @DisplayName("should_collect_all_dependencies_in_a_fully_added_tree")
+    void shouldCollectAllDependenciesInFullyAddedTree() {
+      // Given
+      MavenArtifactNode grandchildNode = addedNode("com.example", "grandchild", "3.0.0", List.of());
+      MavenArtifactNode childNode =
+          addedNode("com.example", "child", "2.0.0", List.of(grandchildNode));
+      MavenArtifactNode rootNode = addedNode("com.example", "root", "1.0.0", List.of(childNode));
+
+      when(mavenProjectsManager.hasProjects()).thenReturn(true);
+      MavenProject mavenProject = mock(MavenProject.class);
+      when(mavenProjectsManager.getProjects()).thenReturn(List.of(mavenProject));
+      when(mavenProject.getDependencyTree()).thenReturn(List.of(rootNode));
+
+      // When
+      List<OsvPackage> results = DependencyParser.parseDependencies(project);
+
+      // Then
+      assertThat(results)
+          .extracting(OsvPackage::name)
+          .containsExactly("com.example:child", "com.example:grandchild", "com.example:root");
+      assertThat(results.get(1).dependencyChains())
+          .containsExactly(
+              List.of("com.example:root", "com.example:child", "com.example:grandchild"));
+    }
+
+    @Test
+    @DisplayName("should_skip_artifact_without_version_and_keep_parsing_tree")
+    void shouldSkipArtifactWithoutVersionAndKeepParsingTree() {
+      // Given: a null version would make OsvPackage throw an NPE, aborting the whole Maven parse.
+      MavenArtifact brokenArtifact = mock(MavenArtifact.class);
+      when(brokenArtifact.getGroupId()).thenReturn("com.example");
+      when(brokenArtifact.getArtifactId()).thenReturn("no-version");
+      when(brokenArtifact.getVersion()).thenReturn(null);
+
+      MavenArtifactNode brokenNode = mock(MavenArtifactNode.class);
+      when(brokenNode.getState()).thenReturn(MavenArtifactState.ADDED);
+      when(brokenNode.getArtifact()).thenReturn(brokenArtifact);
+      MavenArtifactNode childNode = addedNode("com.example", "child", "2.0.0", List.of());
+      when(brokenNode.getDependencies()).thenReturn(List.of(childNode));
+
+      when(mavenProjectsManager.hasProjects()).thenReturn(true);
+      MavenProject mavenProject = mock(MavenProject.class);
+      when(mavenProjectsManager.getProjects()).thenReturn(List.of(mavenProject));
+      MavenArtifactNode healthyNode = addedNode("com.example", "healthy", "3.0.0", List.of());
+      when(mavenProject.getDependencyTree()).thenReturn(List.of(brokenNode, healthyNode));
+
+      // When
+      List<OsvPackage> results = DependencyParser.parseDependencies(project);
+
+      // Then
+      assertThat(results)
+          .extracting(OsvPackage::name)
+          .containsExactlyInAnyOrder("com.example:child", "com.example:healthy");
+    }
+
+    private MavenArtifactNode addedNode(
+        String groupId, String artifactId, String version, List<MavenArtifactNode> children) {
+      MavenArtifact artifact = mock(MavenArtifact.class);
+      when(artifact.getGroupId()).thenReturn(groupId);
+      when(artifact.getArtifactId()).thenReturn(artifactId);
+      when(artifact.getVersion()).thenReturn(version);
+
+      MavenArtifactNode node = mock(MavenArtifactNode.class);
+      when(node.getState()).thenReturn(MavenArtifactState.ADDED);
+      when(node.getArtifact()).thenReturn(artifact);
+      when(node.getDependencies()).thenReturn(children);
+      return node;
+    }
+  }
+
+  @Nested
+  @DisplayName("Maven Resolved Version")
+  class MavenResolvedVersion {
+
+    @Test
+    @DisplayName("should_return_effective_version_of_added_node")
+    void shouldReturnEffectiveVersionOfAddedNode() {
+      // Given: what the scan queried OSV with for a ${...} version must be recoverable from the
+      // pom's resolved tree.
+      VirtualFile pomFile = mock(VirtualFile.class);
+      MavenProject mavenProject = mock(MavenProject.class);
+      when(mavenProjectsManager.findProject(pomFile)).thenReturn(mavenProject);
+      MavenArtifactNode childNode = addedNode("com.example", "lib", "1.2.3", List.of());
+      MavenArtifactNode rootNode = addedNode("com.example", "root", "1.0.0", List.of(childNode));
+      when(mavenProject.getDependencyTree()).thenReturn(List.of(rootNode));
+
+      // When
+      String version =
+          DependencyParser.findResolvedVersion(project, pomFile, "com.example", "lib");
+
+      // Then
+      assertThat(version).isEqualTo("1.2.3");
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = MavenArtifactState.class, mode = EnumSource.Mode.EXCLUDE, names = "ADDED")
+    @DisplayName("should_return_null_when_only_lost_nodes_match")
+    void shouldReturnNullWhenOnlyLostNodesMatch(MavenArtifactState lostState) {
+      // Given: the coordinate is only reachable through a mediated-away node, whose subtree is
+      // pruned — the scan never asked OSV about it, so there is nothing to match against.
+      MavenArtifact lostArtifact = mock(MavenArtifact.class);
+      when(lostArtifact.getGroupId()).thenReturn("com.example");
+      when(lostArtifact.getArtifactId()).thenReturn("lib");
+      when(lostArtifact.getVersion()).thenReturn("1.0.0");
+
+      MavenArtifactNode lostNode = mock(MavenArtifactNode.class);
+      when(lostNode.getState()).thenReturn(lostState);
+      when(lostNode.getArtifact()).thenReturn(lostArtifact);
+      MavenArtifactNode ghostNode = addedNode("com.example", "ghost", "9.9.9", List.of());
+      when(lostNode.getDependencies()).thenReturn(List.of(ghostNode)); // must never be traversed
+
+      VirtualFile pomFile = mock(VirtualFile.class);
+      MavenProject mavenProject = mock(MavenProject.class);
+      when(mavenProjectsManager.findProject(pomFile)).thenReturn(mavenProject);
+      when(mavenProject.getDependencyTree()).thenReturn(List.of(lostNode));
+
+      // When
+      String version =
+          DependencyParser.findResolvedVersion(project, pomFile, "com.example", "lib");
+
+      // Then
+      assertThat(version).isNull();
+      verify(lostNode, never()).getDependencies();
+    }
+
+    @Test
+    @DisplayName("should_return_null_when_pom_is_not_registered")
+    void shouldReturnNullWhenPomIsNotRegistered() {
+      // Given
+      VirtualFile pomFile = mock(VirtualFile.class);
+      when(mavenProjectsManager.findProject(pomFile)).thenReturn(null);
+
+      // When
+      String version =
+          DependencyParser.findResolvedVersion(project, pomFile, "com.example", "lib");
+
+      // Then
+      assertThat(version).isNull();
+    }
+
+    @Test
+    @DisplayName("should_return_null_when_coordinate_is_not_in_the_tree")
+    void shouldReturnNullWhenCoordinateIsNotInTheTree() {
+      // Given
+      VirtualFile pomFile = mock(VirtualFile.class);
+      MavenProject mavenProject = mock(MavenProject.class);
+      when(mavenProjectsManager.findProject(pomFile)).thenReturn(mavenProject);
+      MavenArtifactNode rootNode = addedNode("com.example", "other", "1.0.0", List.of());
+      when(mavenProject.getDependencyTree()).thenReturn(List.of(rootNode));
+
+      // When
+      String version =
+          DependencyParser.findResolvedVersion(project, pomFile, "com.example", "lib");
+
+      // Then
+      assertThat(version).isNull();
+    }
+
+    @Test
+    @DisplayName("should_return_null_when_no_pom_file_is_given")
+    void shouldReturnNullWhenNoPomFileIsGiven() {
+      // When
+      String version =
+          DependencyParser.findResolvedVersion(project, null, "com.example", "lib");
+
+      // Then
+      assertThat(version).isNull();
+    }
+
+    @Test
+    @DisplayName("should_return_null_when_projects_manager_is_missing")
+    void shouldReturnNullWhenProjectsManagerIsMissing() {
+      // Given
+      mavenStatic.when(() -> MavenProjectsManager.getInstance(project)).thenReturn(null);
+
+      // When
+      String version =
+          DependencyParser.findResolvedVersion(project, mock(VirtualFile.class), "com.example", "lib");
+
+      // Then
+      assertThat(version).isNull();
+    }
+
+    private MavenArtifactNode addedNode(
+        String groupId, String artifactId, String version, List<MavenArtifactNode> children) {
+      MavenArtifact artifact = mock(MavenArtifact.class);
+      when(artifact.getGroupId()).thenReturn(groupId);
+      when(artifact.getArtifactId()).thenReturn(artifactId);
+      when(artifact.getVersion()).thenReturn(version);
+
+      MavenArtifactNode node = mock(MavenArtifactNode.class);
+      when(node.getState()).thenReturn(MavenArtifactState.ADDED);
+      when(node.getArtifact()).thenReturn(artifact);
+      when(node.getDependencies()).thenReturn(children);
+      return node;
     }
   }
 

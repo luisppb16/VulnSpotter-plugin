@@ -16,10 +16,12 @@ import com.intellij.openapi.application.Application;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.application.ModalityState;
 import com.intellij.openapi.project.Project;
+import com.intellij.openapi.util.Condition;
 import com.intellij.util.messages.MessageBus;
 import com.intellij.util.messages.MessageBusConnection;
 import com.luisppb16.vulnspotter.application.service.VulnerabilityScannerService;
 import com.luisppb16.vulnspotter.domain.model.OsvPackage;
+import com.luisppb16.vulnspotter.ui.notification.VulnSpotterNotifications;
 import java.awt.Component;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
@@ -44,6 +46,7 @@ class VulnSpotterToolWindowTest {
   @Mock private ModalityState modalityState;
   @Mock private MessageBus messageBus;
   @Mock private MessageBusConnection messageBusConnection;
+  @Mock private Condition<?> disposedCondition;
 
   private MockedStatic<VulnerabilityScannerService> scannerServiceMock;
   private MockedStatic<ApplicationManager> applicationManagerMock;
@@ -67,7 +70,7 @@ class VulnSpotterToolWindowTest {
     when(messageBus.connect(any(Disposable.class))).thenReturn(messageBusConnection);
     modalityStateMock.when(ModalityState::defaultModalityState).thenReturn(modalityState);
 
-    // Mock invokeLater to run immediately
+    // Mock invokeLater to run immediately (both overloads: the scan callbacks use the 2-arg one)
     doAnswer(
             invocation -> {
               Runnable r = invocation.getArgument(0);
@@ -76,6 +79,15 @@ class VulnSpotterToolWindowTest {
             })
         .when(application)
         .invokeLater(any(Runnable.class));
+    doAnswer(
+            invocation -> {
+              Runnable r = invocation.getArgument(0);
+              r.run();
+              return null;
+            })
+        .when(application)
+        .invokeLater(any(Runnable.class), any(Condition.class));
+    doReturn(disposedCondition).when(project).getDisposed();
 
     vulnSpotterToolWindow = new VulnSpotterToolWindow(project);
   }
@@ -99,7 +111,7 @@ class VulnSpotterToolWindowTest {
     VulnerabilityScannerService.ScanResult result =
         new VulnerabilityScannerService.ScanResult(pkg, false, List.of());
 
-    when(scannerService.scanDependencies())
+    when(scannerService.scanDependencies(true))
         .thenReturn(CompletableFuture.completedFuture(List.of(result)));
 
     // Act
@@ -109,7 +121,78 @@ class VulnSpotterToolWindowTest {
     scanButton.doClick();
 
     // Assert
-    verify(scannerService).scanDependencies();
+    verify(scannerService).scanDependencies(true);
+  }
+
+  @Test
+  void runScan_ignoresResultsOfSupersededScan() {
+    // Arrange: launch two overlapping scans; the first is still in flight when the second starts.
+    OsvPackage stalePkg = new OsvPackage("stale:pkg", "Maven", "0.1.0");
+    OsvPackage currentPkg = new OsvPackage("current:pkg", "Maven", "1.0.0");
+    VulnerabilityScannerService.ScanResult staleScan =
+        new VulnerabilityScannerService.ScanResult(stalePkg, true, List.of());
+    VulnerabilityScannerService.ScanResult currentScan =
+        new VulnerabilityScannerService.ScanResult(currentPkg, false, List.of());
+
+    CompletableFuture<List<VulnerabilityScannerService.ScanResult>> stale = new CompletableFuture<>();
+    CompletableFuture<List<VulnerabilityScannerService.ScanResult>> current =
+        new CompletableFuture<>();
+    when(scannerService.scanDependencies(true)).thenReturn(stale).thenReturn(current);
+
+    // Act
+    vulnSpotterToolWindow.runScan();
+    vulnSpotterToolWindow.runScan();
+    JButton scanButton = findScanButton(vulnSpotterToolWindow.getContent());
+    stale.complete(List.of(staleScan)); // the superseded scan finishes late
+
+    // Assert: its results never reach the table nor the annotator's data.
+    verify(scannerService, never()).updateResults(anyList());
+    assertNotNull(scanButton);
+    assertFalse(scanButton.isEnabled());
+
+    // Act: the current scan finishes.
+    current.complete(List.of(currentScan));
+
+    // Assert: only the current scan's results are applied and the UI is freed.
+    verify(scannerService).updateResults(anyList());
+    assertTrue(scanButton.isEnabled());
+  }
+
+  @Test
+  void runScan_ignoresFailureOfSupersededScan() {
+    // Arrange
+    try (MockedStatic<VulnSpotterNotifications> notificationsMock =
+        mockStatic(VulnSpotterNotifications.class)) {
+      CompletableFuture<List<VulnerabilityScannerService.ScanResult>> stale =
+          new CompletableFuture<>();
+      CompletableFuture<List<VulnerabilityScannerService.ScanResult>> current =
+          new CompletableFuture<>();
+      when(scannerService.scanDependencies(true)).thenReturn(stale).thenReturn(current);
+
+      vulnSpotterToolWindow.runScan();
+      vulnSpotterToolWindow.runScan();
+      JButton scanButton = findScanButton(vulnSpotterToolWindow.getContent());
+
+      // Act: the superseded scan fails late.
+      stale.completeExceptionally(new RuntimeException("OSV exploded"));
+
+      // Assert: a superseded failure must not reset the UI or notify.
+      notificationsMock.verify(
+          () ->
+              VulnSpotterNotifications.notifyError(any(), anyString(), anyString()),
+          never());
+      assertNotNull(scanButton);
+      assertFalse(scanButton.isEnabled());
+
+      // Act: the current scan finishes cleanly.
+      OsvPackage pkg = new OsvPackage("current:pkg", "Maven", "1.0.0");
+      VulnerabilityScannerService.ScanResult result =
+          new VulnerabilityScannerService.ScanResult(pkg, false, List.of());
+      current.complete(List.of(result));
+
+      // Assert
+      assertTrue(scanButton.isEnabled());
+    }
   }
 
   private JButton findScanButton(JComponent component) {

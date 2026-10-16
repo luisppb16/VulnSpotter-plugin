@@ -17,6 +17,7 @@ import com.intellij.psi.xml.XmlTag;
 import com.luisppb16.vulnspotter.application.service.VulnerabilityScannerService;
 import com.luisppb16.vulnspotter.domain.service.FixedVersionResolver;
 import com.luisppb16.vulnspotter.domain.service.SeverityAnalyzer;
+import com.luisppb16.vulnspotter.infrastructure.parser.DependencyParser;
 import java.util.Locale;
 import org.jetbrains.annotations.NotNull;
 
@@ -94,17 +95,30 @@ public class DependencyAnnotator implements Annotator {
     if (groupTag == null || artifactTag == null) {
       return;
     }
-    String name =
-        groupTag.getValue().getTrimmedText() + ":" + artifactTag.getValue().getTrimmedText();
+    String groupId = groupTag.getValue().getTrimmedText();
+    String artifactId = artifactTag.getValue().getTrimmedText();
+    String name = groupId + ":" + artifactId;
 
     XmlTag versionTag = dependencyTag.findFirstSubTag("version");
     String versionText = versionTag != null ? versionTag.getValue().getTrimmedText() : null;
-    // A literal version must match the scanned version, otherwise the dependency has already been
-    // upgraded past the vulnerable one (a stale scan would otherwise re-highlight a fixed dep).
-    // Property-based versions (${...}) cannot be checked here, so they are still annotated.
-    String resolvedVersion = null;
+    String resolvedVersion;
     if (versionText != null && !versionText.startsWith("${") && !versionText.endsWith("}")) {
+      // A literal version must match the scanned version, otherwise the dependency has already
+      // been upgraded past the vulnerable one (a stale scan would otherwise re-highlight a fixed
+      // dep).
       resolvedVersion = versionText;
+    } else {
+      // Property-based (${...}) or inherited versions: the scan recorded the version Maven
+      // actually resolved for this pom, so look it up in this pom's dependency tree. Without a
+      // resolved version no scan row can be ruled in or out — staying silent is the only choice
+      // that cannot produce false positives (a name-only fallback highlighted any vulnerable
+      // entry whose group:artifact matched, even at an unrelated old version).
+      resolvedVersion =
+          DependencyParser.findResolvedVersion(
+              dependencyTag.getProject(),
+              dependencyTag.getContainingFile().getVirtualFile(),
+              groupId,
+              artifactId);
     }
 
     VulnerabilityScannerService.ScanResult result =

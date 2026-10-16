@@ -9,7 +9,11 @@ without leaving the IDE.
 
 - **Gradle & Maven scanning** — Detects declared dependencies in Gradle and Maven projects and checks them against
   OSV.dev (`querybatch` + per-vulnerability hydration, with caching, retries and pagination). Manifest parsers also
-  cover `package.json`/`package-lock.json`, `requirements.txt`, and `go.mod` for polyglot repositories.
+  cover `package.json`/`package-lock.json`, `requirements.txt`, and `go.mod` for polyglot repositories. Maven walks
+  IntelliJ's resolved dependency tree, pruning dependency paths that lost conflict/duplicate mediation — a common
+  outcome in multi-module projects, e.g. when a parent POM manages the version — so only classpath versions are
+  reported. Gradle reads the external-system model, whose library versions are already conflict-resolved by Gradle
+  before import (libraries from every configuration are included).
 - **In-editor highlighting & quick fix** — Vulnerable dependencies are annotated in `pom.xml` and `build.gradle`
   with the vulnerability count, the highest severity and the recommended version. A one-click intention (*Update …
   to …*) upgrades the declaration — including Maven `${property}`-based versions — and refuses to downgrade.
@@ -92,7 +96,7 @@ The codebase follows a hexagonal-style layered architecture under the base packa
   (`VulnSpotterConfigurable`).
 - **util/** — Shared helpers (`HtmlEscaper`).
 
-**Stack:** Java 25, IntelliJ Platform Gradle Plugin 2.18.1, Gradle 9.6.1, Jackson, cvss-calculator, OpenHTMLtoPDF.
+**Stack:** Java 25, IntelliJ Platform Gradle Plugin 2.19.0, Gradle 9.8.1, Jackson, cvss-calculator, OpenHTMLtoPDF.
 
 ## 🔨 Build
 

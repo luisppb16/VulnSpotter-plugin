@@ -30,6 +30,7 @@ import java.util.Collections;
 import java.util.List;
 import org.jetbrains.idea.maven.model.MavenArtifact;
 import org.jetbrains.idea.maven.model.MavenArtifactNode;
+import org.jetbrains.idea.maven.model.MavenArtifactState;
 import org.jetbrains.idea.maven.project.MavenProject;
 import org.jetbrains.idea.maven.project.MavenProjectsManager;
 import org.jetbrains.plugins.gradle.util.GradleConstants;
@@ -119,6 +120,7 @@ class DependencyParserBenchmarkTest {
     for (int i = 0; i < depCount; i++) {
       MavenArtifactNode node = mock(MavenArtifactNode.class);
       MavenArtifact artifact = mock(MavenArtifact.class);
+      when(node.getState()).thenReturn(MavenArtifactState.ADDED);
       when(node.getArtifact()).thenReturn(artifact);
       when(artifact.getGroupId()).thenReturn("com.example");
       when(artifact.getArtifactId()).thenReturn("lib-" + i);

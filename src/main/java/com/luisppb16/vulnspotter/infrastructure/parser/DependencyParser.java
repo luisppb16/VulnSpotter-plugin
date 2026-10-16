@@ -44,8 +44,10 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 import org.jetbrains.idea.maven.model.MavenArtifact;
 import org.jetbrains.idea.maven.model.MavenArtifactNode;
+import org.jetbrains.idea.maven.model.MavenArtifactState;
 import org.jetbrains.idea.maven.project.MavenProject;
 import org.jetbrains.idea.maven.project.MavenProjectsManager;
 import org.jetbrains.plugins.gradle.util.GradleConstants;
@@ -494,16 +496,98 @@ public final class DependencyParser {
     return dependencies;
   }
 
+  /**
+   * Resolves the effective version of {@code groupId:artifactId} in the module whose pom is {@code
+   * pomFile}, exactly as the scanner saw it: the first {@link MavenArtifactState#ADDED} node in
+   * this pom's resolved dependency tree, with the same classpath rule as {@link
+   * #parseDependencies} uses when collecting packages (mediated-away nodes prune their subtree).
+   *
+   * <p>Lets the annotator map a {@code ${...}} or inherited {@code <version>} to the version the
+   * scan actually queried OSV with. Returns {@code null} when the pom is not (yet) an imported
+   * Maven project or the coordinate has no ADDED node in that tree; callers must treat {@code
+   * null} as "cannot be checked", never as "safe".
+   */
+  public static String findResolvedVersion(
+      @NotNull Project project,
+      @Nullable VirtualFile pomFile,
+      @NotNull String groupId,
+      @NotNull String artifactId) {
+    MavenProjectsManager manager = MavenProjectsManager.getInstance(project);
+    if (pomFile == null || manager == null) {
+      return null;
+    }
+    MavenProject mavenProject = manager.findProject(pomFile);
+    if (mavenProject == null) {
+      return null;
+    }
+    for (MavenArtifactNode node : mavenProject.getDependencyTree()) {
+      String version = findAddedVersion(node, groupId, artifactId);
+      if (version != null) {
+        return version;
+      }
+    }
+    return null;
+  }
+
+  private static String findAddedVersion(MavenArtifactNode node, String groupId, String artifactId) {
+    if (node == null || node.getState() != MavenArtifactState.ADDED) {
+      // Not on the classpath: same pruning as collectMavenDependencies.
+      return null;
+    }
+    MavenArtifact artifact = node.getArtifact();
+    if (artifact != null
+        && groupId.equals(artifact.getGroupId())
+        && artifactId.equals(artifact.getArtifactId())
+        && artifact.getVersion() != null) {
+      return artifact.getVersion();
+    }
+    for (MavenArtifactNode child : node.getDependencies()) {
+      String version = findAddedVersion(child, groupId, artifactId);
+      if (version != null) {
+        return version;
+      }
+    }
+    return null;
+  }
+
+  /**
+   * DFS over the resolved Maven dependency tree, emitting only nodes that are actually on the
+   * effective classpath. Only {@link MavenArtifactState#ADDED} nodes are: any other state lost
+   * conflict/duplicate mediation between dependency paths (that version was replaced by the
+   * winner's, which is scanned along its own fully-ADDED path), so asking OSV about it would report
+   * vulnerabilities that no longer apply. The subtree of a lost node is pruned, mirroring
+   * IntelliJ's own classpath collector, which skips mediated nodes without recursing into them.
+   */
   private static void collectMavenDependencies(
       MavenArtifactNode node, List<String> parentChain, List<OsvPackage> result) {
+    if (node.getState() != MavenArtifactState.ADDED) {
+      // Not on the classpath: the traversal stops here, so no mediated-away artifact version (nor
+      // anything only reachable through it) ever reaches OSV.
+      return;
+    }
+
     MavenArtifact artifact = node.getArtifact();
-    String fullName = artifact.getGroupId() + ":" + artifact.getArtifactId();
+    String groupId = artifact.getGroupId();
+    String artifactId = artifact.getArtifactId();
+    String version = artifact.getVersion();
 
     List<String> currentChain = new ArrayList<>(parentChain);
-    currentChain.add(fullName);
-
-    result.add(
-        new OsvPackage(fullName, MAVEN_ECOSYSTEM, artifact.getVersion(), Set.of(currentChain)));
+    if (groupId != null && artifactId != null && version != null) {
+      String fullName = groupId + ":" + artifactId;
+      currentChain.add(fullName);
+      result.add(new OsvPackage(fullName, MAVEN_ECOSYSTEM, version, Set.of(currentChain)));
+    } else {
+      // Fail fast enough to be visible: a malformed artifact silently feeds bogus or empty OSV
+      // queries, which is data loss that must not hide behind debug-level logging.
+      LOG.warn(
+          "Skipping Maven dependency "
+              + groupId
+              + ":"
+              + artifactId
+              + ":"
+              + version
+              + " (missing coordinates or version)");
+    }
 
     for (MavenArtifactNode child : node.getDependencies()) {
       collectMavenDependencies(child, currentChain, result);

@@ -169,6 +169,17 @@ public class OsvClient {
     executorService.shutdown();
   }
 
+  /**
+   * Discards every cached OSV answer — per-package batch results and hydrated vulnerability
+   * records alike. Called before forced (manual) scans and after a build-system re-import, which
+   * can change any dependency's resolved version and thus make old answers stale. Cheap: two map
+   * clears, thread-safe.
+   */
+  public void invalidateCache() {
+    packageCache.clear();
+    vulnCache.clear();
+  }
+
   public CompletableFuture<Optional<OsvResponse>> checkDependency(
       String packageName, String version, String ecosystem) {
     Objects.requireNonNull(packageName, "Package name cannot be null");

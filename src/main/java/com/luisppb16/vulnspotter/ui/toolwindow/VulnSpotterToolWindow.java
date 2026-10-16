@@ -593,7 +593,7 @@ public final class VulnSpotterToolWindow implements Disposable {
 
     CompletableFuture<List<VulnerabilityScannerService.ScanResult>> future =
         VulnerabilityScannerService.getInstance(project)
-            .scanDependencies()
+            .scanDependencies(true)
             .orTimeout(SCAN_TIMEOUT_SECONDS, TimeUnit.SECONDS);
     activeScan = future;
 
@@ -601,11 +601,28 @@ public final class VulnSpotterToolWindow implements Disposable {
         .thenAccept(
             results ->
                 ApplicationManager.getApplication()
-                    .invokeLater(() -> onScanFinished(results), project.getDisposed()))
+                    .invokeLater(
+                        () -> {
+                          if (activeScan != future) {
+                            // A newer scan superseded this one: never paint its stale results,
+                            // overwrite the annotator's data or release the new scan's guard.
+                            return;
+                          }
+                          onScanFinished(results);
+                        },
+                        project.getDisposed()))
         .exceptionally(
             ex -> {
               ApplicationManager.getApplication()
-                  .invokeLater(() -> onScanFailed(ex), project.getDisposed());
+                  .invokeLater(
+                      () -> {
+                        if (activeScan != future) {
+                          // On failure too: only the newest scan may reset the UI state.
+                          return;
+                        }
+                        onScanFailed(ex);
+                      },
+                      project.getDisposed());
               return null;
             });
   }

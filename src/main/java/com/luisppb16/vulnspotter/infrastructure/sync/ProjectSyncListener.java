@@ -11,6 +11,7 @@ import com.intellij.openapi.externalSystem.model.task.ExternalSystemTaskId;
 import com.intellij.openapi.externalSystem.model.task.ExternalSystemTaskNotificationListener;
 import com.intellij.openapi.externalSystem.model.task.ExternalSystemTaskType;
 import com.intellij.openapi.project.Project;
+import com.luisppb16.vulnspotter.application.service.VulnerabilityScannerService;
 import com.luisppb16.vulnspotter.settings.VulnSpotterSettings;
 import org.jetbrains.annotations.NotNull;
 
@@ -23,7 +24,16 @@ public class ProjectSyncListener implements ExternalSystemTaskNotificationListen
       return;
     }
     Project project = id.findProject();
-    if (project == null || !VulnSpotterSettings.getInstance().isAutoScanOnSync()) {
+    if (project == null) {
+      return;
+    }
+    // Same as MavenSyncListener: after a successful re-resolve every cached OSV answer may be
+    // stale, so it is dropped whether or not an auto-scan follows.
+    VulnerabilityScannerService scanner = VulnerabilityScannerService.getInstance(project);
+    if (scanner != null) {
+      scanner.invalidateCache();
+    }
+    if (!VulnSpotterSettings.getInstance().isAutoScanOnSync()) {
       return;
     }
     AutoScanRunner.run(project);
