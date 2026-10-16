@@ -7,12 +7,12 @@
 
 plugins {
     id 'java'
-    id 'org.jetbrains.intellij.platform' version '2.18.1'
+    id 'org.jetbrains.intellij.platform' version '2.19.0'
     id 'jacoco'
 }
 
 group = 'com.luisppb16'
-version = '1.0.4'
+version = '1.0.5'
 
 repositories {
     mavenCentral()
@@ -23,7 +23,7 @@ repositories {
 
 dependencies {
     // JSON - Jackson
-    implementation 'com.fasterxml.jackson.core:jackson-databind:2.21.5'
+    implementation 'com.fasterxml.jackson.core:jackson-databind:2.21.7'
 
 
     // CVSS base-score calculation from OSV severity vectors (v2/v3/v3.1/v4)
