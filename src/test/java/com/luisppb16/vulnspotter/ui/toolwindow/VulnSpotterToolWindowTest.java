@@ -134,7 +134,8 @@ class VulnSpotterToolWindowTest {
     VulnerabilityScannerService.ScanResult currentScan =
         new VulnerabilityScannerService.ScanResult(currentPkg, false, List.of());
 
-    CompletableFuture<List<VulnerabilityScannerService.ScanResult>> stale = new CompletableFuture<>();
+    CompletableFuture<List<VulnerabilityScannerService.ScanResult>> stale =
+        new CompletableFuture<>();
     CompletableFuture<List<VulnerabilityScannerService.ScanResult>> current =
         new CompletableFuture<>();
     when(scannerService.scanDependencies(true)).thenReturn(stale).thenReturn(current);
@@ -178,9 +179,7 @@ class VulnSpotterToolWindowTest {
 
       // Assert: a superseded failure must not reset the UI or notify.
       notificationsMock.verify(
-          () ->
-              VulnSpotterNotifications.notifyError(any(), anyString(), anyString()),
-          never());
+          () -> VulnSpotterNotifications.notifyError(any(), anyString(), anyString()), never());
       assertNotNull(scanButton);
       assertFalse(scanButton.isEnabled());
 

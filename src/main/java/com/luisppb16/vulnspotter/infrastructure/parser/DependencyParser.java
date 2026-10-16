@@ -499,13 +499,13 @@ public final class DependencyParser {
   /**
    * Resolves the effective version of {@code groupId:artifactId} in the module whose pom is {@code
    * pomFile}, exactly as the scanner saw it: the first {@link MavenArtifactState#ADDED} node in
-   * this pom's resolved dependency tree, with the same classpath rule as {@link
-   * #parseDependencies} uses when collecting packages (mediated-away nodes prune their subtree).
+   * this pom's resolved dependency tree, with the same classpath rule as {@link #parseDependencies}
+   * uses when collecting packages (mediated-away nodes prune their subtree).
    *
    * <p>Lets the annotator map a {@code ${...}} or inherited {@code <version>} to the version the
    * scan actually queried OSV with. Returns {@code null} when the pom is not (yet) an imported
-   * Maven project or the coordinate has no ADDED node in that tree; callers must treat {@code
-   * null} as "cannot be checked", never as "safe".
+   * Maven project or the coordinate has no ADDED node in that tree; callers must treat {@code null}
+   * as "cannot be checked", never as "safe".
    */
   public static String findResolvedVersion(
       @NotNull Project project,
@@ -529,7 +529,8 @@ public final class DependencyParser {
     return null;
   }
 
-  private static String findAddedVersion(MavenArtifactNode node, String groupId, String artifactId) {
+  private static String findAddedVersion(
+      MavenArtifactNode node, String groupId, String artifactId) {
     if (node == null || node.getState() != MavenArtifactState.ADDED) {
       // Not on the classpath: same pruning as collectMavenDependencies.
       return null;

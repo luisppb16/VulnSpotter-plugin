@@ -16,7 +16,6 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import com.intellij.openapi.module.Module;
 import com.intellij.openapi.project.Project;
 import com.luisppb16.vulnspotter.application.service.VulnerabilityScannerService;
 import com.luisppb16.vulnspotter.settings.VulnSpotterSettings;

@@ -261,8 +261,7 @@ class DependencyParserTest {
       when(mavenProject.getDependencyTree()).thenReturn(List.of(rootNode));
 
       // When
-      String version =
-          DependencyParser.findResolvedVersion(project, pomFile, "com.example", "lib");
+      String version = DependencyParser.findResolvedVersion(project, pomFile, "com.example", "lib");
 
       // Then
       assertThat(version).isEqualTo("1.2.3");
@@ -291,8 +290,7 @@ class DependencyParserTest {
       when(mavenProject.getDependencyTree()).thenReturn(List.of(lostNode));
 
       // When
-      String version =
-          DependencyParser.findResolvedVersion(project, pomFile, "com.example", "lib");
+      String version = DependencyParser.findResolvedVersion(project, pomFile, "com.example", "lib");
 
       // Then
       assertThat(version).isNull();
@@ -307,8 +305,7 @@ class DependencyParserTest {
       when(mavenProjectsManager.findProject(pomFile)).thenReturn(null);
 
       // When
-      String version =
-          DependencyParser.findResolvedVersion(project, pomFile, "com.example", "lib");
+      String version = DependencyParser.findResolvedVersion(project, pomFile, "com.example", "lib");
 
       // Then
       assertThat(version).isNull();
@@ -325,8 +322,7 @@ class DependencyParserTest {
       when(mavenProject.getDependencyTree()).thenReturn(List.of(rootNode));
 
       // When
-      String version =
-          DependencyParser.findResolvedVersion(project, pomFile, "com.example", "lib");
+      String version = DependencyParser.findResolvedVersion(project, pomFile, "com.example", "lib");
 
       // Then
       assertThat(version).isNull();
@@ -336,8 +332,7 @@ class DependencyParserTest {
     @DisplayName("should_return_null_when_no_pom_file_is_given")
     void shouldReturnNullWhenNoPomFileIsGiven() {
       // When
-      String version =
-          DependencyParser.findResolvedVersion(project, null, "com.example", "lib");
+      String version = DependencyParser.findResolvedVersion(project, null, "com.example", "lib");
 
       // Then
       assertThat(version).isNull();
@@ -351,7 +346,8 @@ class DependencyParserTest {
 
       // When
       String version =
-          DependencyParser.findResolvedVersion(project, mock(VirtualFile.class), "com.example", "lib");
+          DependencyParser.findResolvedVersion(
+              project, mock(VirtualFile.class), "com.example", "lib");
 
       // Then
       assertThat(version).isNull();
