@@ -126,13 +126,37 @@ class DependencyParserTest {
       when(mavenProject.getDependencyTree()).thenReturn(List.of(node));
 
       // When
-      List<OsvPackage> results = DependencyParser.parseDependencies(project);
+      List<OsvPackage> results = DependencyParser.parseDependencies(project).packages();
 
       // Then
       assertThat(results).hasSize(1);
       assertThat(results.get(0).name()).isEqualTo("com.example:lib");
       assertThat(results.get(0).version()).isEqualTo("1.0.0");
       assertThat(results.get(0).ecosystem()).isEqualTo("Maven");
+    }
+
+    @Test
+    @DisplayName("should_skip_an_added_node_with_a_null_artifact_instead_of_failing")
+    void shouldSkipAnAddedNodeWithANullArtifactInsteadOfFailing() {
+      // Given: a stale or partially resolved model can present an ADDED node without its
+      // artifact — the walks must skip it instead of an NPE losing the whole pass.
+      MavenArtifactNode fineNode = addedNode("com.example", "fine", "3.0.0", List.of());
+      MavenArtifactNode brokenNode = mock(MavenArtifactNode.class);
+      when(brokenNode.getState()).thenReturn(MavenArtifactState.ADDED);
+      // brokenNode.getArtifact() stays the mock default: null.
+      when(brokenNode.getDependencies()).thenReturn(List.of(fineNode));
+
+      when(mavenProjectsManager.hasProjects()).thenReturn(true);
+      MavenProject mavenProject = mock(MavenProject.class);
+      when(mavenProjectsManager.getProjects()).thenReturn(List.of(mavenProject));
+      when(mavenProject.getDependencyTree()).thenReturn(List.of(brokenNode));
+
+      // When
+      List<OsvPackage> results = DependencyParser.parseDependencies(project).packages();
+
+      // Then: the malformed node is skipped; its reachable children still make it into the scan.
+      assertThat(results).hasSize(1);
+      assertThat(results.get(0).name()).isEqualTo("com.example:fine");
     }
 
     @ParameterizedTest
@@ -164,7 +188,7 @@ class DependencyParserTest {
       when(mavenProject.getDependencyTree()).thenReturn(List.of(rootNode));
 
       // When
-      List<OsvPackage> results = DependencyParser.parseDependencies(project);
+      List<OsvPackage> results = DependencyParser.parseDependencies(project).packages();
 
       // Then
       assertThat(results)
@@ -188,7 +212,7 @@ class DependencyParserTest {
       when(mavenProject.getDependencyTree()).thenReturn(List.of(rootNode));
 
       // When
-      List<OsvPackage> results = DependencyParser.parseDependencies(project);
+      List<OsvPackage> results = DependencyParser.parseDependencies(project).packages();
 
       // Then
       assertThat(results)
@@ -197,6 +221,32 @@ class DependencyParserTest {
       assertThat(results.get(1).dependencyChains())
           .containsExactly(
               List.of("com.example:root", "com.example:child", "com.example:grandchild"));
+    }
+
+    @Test
+    @DisplayName("should_publish_resolved_version_index_while_walking_the_tree")
+    void shouldPublishResolvedVersionIndexWhileWalkingTheTree() {
+      // Given: a pom declaring the same coordinate through two paths; the pre-order DFS visits
+      // the first ADDED occurrence first, and the index must keep that one (first-wins, exactly
+      // like findResolvedVersion).
+      MavenProject mavenProject = mock(MavenProject.class);
+      VirtualFile pom = mock(VirtualFile.class);
+      when(mavenProject.getFile()).thenReturn(pom);
+      MavenArtifactNode firstPathNode = addedNode("com.example", "lib", "1.2.3", List.of());
+      MavenArtifactNode secondPathNode = addedNode("com.example", "lib", "4.5.6", List.of());
+      MavenArtifactNode rootNode =
+          addedNode("com.example", "root", "1.0.0", List.of(firstPathNode, secondPathNode));
+
+      when(mavenProjectsManager.hasProjects()).thenReturn(true);
+      when(mavenProjectsManager.getProjects()).thenReturn(List.of(mavenProject));
+      when(mavenProject.getDependencyTree()).thenReturn(List.of(rootNode));
+
+      // When
+      DependencyParser.ParseOutcome outcome = DependencyParser.parseDependencies(project);
+
+      // Then
+      assertThat(outcome.resolvedVersions().get(pom)).containsEntry("com.example:lib", "1.2.3");
+      assertThat(outcome.packages()).extracting(OsvPackage::name).contains("com.example:lib");
     }
 
     @Test
@@ -221,7 +271,7 @@ class DependencyParserTest {
       when(mavenProject.getDependencyTree()).thenReturn(List.of(brokenNode, healthyNode));
 
       // When
-      List<OsvPackage> results = DependencyParser.parseDependencies(project);
+      List<OsvPackage> results = DependencyParser.parseDependencies(project).packages();
 
       // Then
       assertThat(results)
@@ -396,7 +446,7 @@ class DependencyParserTest {
           .thenReturn(List.of(libNode));
 
       // When
-      List<OsvPackage> results = DependencyParser.parseDependencies(project);
+      List<OsvPackage> results = DependencyParser.parseDependencies(project).packages();
 
       // Then
       assertThat(results).hasSize(1);
@@ -426,7 +476,7 @@ class DependencyParserTest {
       when(libraryTable.getLibraries()).thenReturn(new Library[] {library});
 
       // When
-      List<OsvPackage> results = DependencyParser.parseDependencies(project);
+      List<OsvPackage> results = DependencyParser.parseDependencies(project).packages();
 
       // Then
       assertThat(results).hasSize(1);
@@ -457,7 +507,7 @@ class DependencyParserTest {
       when(libraryTable.getLibraries()).thenReturn(new Library[] {library});
 
       // When
-      List<OsvPackage> results = DependencyParser.parseDependencies(project);
+      List<OsvPackage> results = DependencyParser.parseDependencies(project).packages();
 
       // Then
       assertThat(results).isEmpty();
@@ -486,7 +536,7 @@ class DependencyParserTest {
       when(libraryTable.getLibraries()).thenReturn(new Library[] {library});
 
       // When
-      List<OsvPackage> results = DependencyParser.parseDependencies(project);
+      List<OsvPackage> results = DependencyParser.parseDependencies(project).packages();
 
       // Then
       assertThat(results).hasSize(1);

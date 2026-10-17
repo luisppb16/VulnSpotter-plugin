@@ -40,13 +40,12 @@ public final class ProjectOpenScanActivity implements ProjectActivity {
    * @return {@code true} when a critical vulnerability was found.
    */
   static boolean hasCriticalResults(List<VulnerabilityScannerService.ScanResult> results) {
-    SeverityAnalyzer analyzer = new SeverityAnalyzer();
     return results != null
         && results.stream()
             .anyMatch(
                 result ->
                     SeverityAnalyzer.CRITICAL.equals(
-                        analyzer.getHighestSeverity(result.vulnerabilities())));
+                        SeverityAnalyzer.getHighestSeverity(result.vulnerabilities())));
   }
 
   @Override
@@ -68,11 +67,11 @@ public final class ProjectOpenScanActivity implements ProjectActivity {
               if (project.isDisposed()) {
                 return;
               }
-              scanner.updateResults(results);
+              // Publication is owned by the service; this trigger only counts critical findings.
               if (hasCriticalResults(results)) {
                 VulnSpotterNotifications.notifyWarning(
                     project,
-                    "VulnSpotter",
+                    VulnSpotterNotifications.TITLE,
                     "Critical CVEs found at project open. Open the VulnSpotter tool window for "
                         + "details.");
               }

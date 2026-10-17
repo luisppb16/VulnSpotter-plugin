@@ -7,18 +7,12 @@
 
 package com.luisppb16.vulnspotter.infrastructure.parser;
 
-import com.intellij.openapi.diagnostic.Logger;
-import com.intellij.openapi.project.Project;
+import com.luisppb16.vulnspotter.domain.model.Ecosystem;
 import com.luisppb16.vulnspotter.domain.model.OsvPackage;
-import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
-import java.util.Collections;
-import java.util.HashSet;
-import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Pattern;
 
 /**
@@ -36,42 +30,23 @@ import java.util.regex.Pattern;
  */
 public final class VulnSpotterIgnoreParser {
 
-  private static final Logger LOG = Logger.getInstance(VulnSpotterIgnoreParser.class);
+  /**
+   * Compiled globs, memoized per pattern text: {@code isIgnored} runs once per scanned package, so
+   * recompiling each {@code *} pattern per package turns one scan into thousands of {@code
+   * Pattern.compile} calls. The ignore-file pattern set is small and pure text, so the cache does
+   * not grow unbounded.
+   */
+  private static final Map<String, Pattern> GLOB_CACHE = new ConcurrentHashMap<>();
 
   private VulnSpotterIgnoreParser() {}
-
-  public static Set<String> getIgnoredDependencies(Project project) {
-    if (project.getBasePath() == null) {
-      return Collections.emptySet();
-    }
-
-    Path ignoreFilePath = Paths.get(project.getBasePath(), ".vulnspotterignore");
-    if (!Files.exists(ignoreFilePath)) {
-      return Collections.emptySet();
-    }
-
-    try {
-      List<String> lines = Files.readAllLines(ignoreFilePath);
-      Set<String> ignored = new HashSet<>();
-      for (String line : lines) {
-        String trimmed = line.trim();
-        if (!trimmed.isEmpty() && !trimmed.startsWith("#")) {
-          ignored.add(trimmed);
-        }
-      }
-      return ignored;
-    } catch (IOException e) {
-      LOG.warn("Failed to read .vulnspotterignore; ignore rules are not being applied", e);
-      return Collections.emptySet();
-    }
-  }
 
   /** True when the package matches any ignore pattern (by name or ecosystem:name, with globs). */
   public static boolean isIgnored(Set<String> patterns, OsvPackage pkg) {
     if (patterns.isEmpty()) {
       return false;
     }
-    boolean caseSensitive = isCaseSensitiveEcosystem(pkg.ecosystem());
+    String ecosystem = pkg.ecosystem();
+    boolean caseSensitive = Ecosystem.isCaseSensitive(ecosystem);
     String name = caseSensitive ? pkg.name() : pkg.name().toLowerCase(Locale.ROOT);
     String qualified =
         caseSensitive
@@ -115,12 +90,11 @@ public final class VulnSpotterIgnoreParser {
     return version != null && version.equals(patternVersion);
   }
 
-  private static boolean isCaseSensitiveEcosystem(String ecosystem) {
-    if (ecosystem == null) return true;
-    return !"npm".equalsIgnoreCase(ecosystem) && !"PyPI".equalsIgnoreCase(ecosystem);
+  private static Pattern globToRegex(String glob) {
+    return GLOB_CACHE.computeIfAbsent(glob, VulnSpotterIgnoreParser::compileGlob);
   }
 
-  private static Pattern globToRegex(String glob) {
+  private static Pattern compileGlob(String glob) {
     String[] parts = glob.split("\\*", -1);
     StringBuilder regex = new StringBuilder();
     for (int i = 0; i < parts.length; i++) {

@@ -16,6 +16,7 @@ import com.luisppb16.vulnspotter.domain.model.OsvPackage;
 import com.luisppb16.vulnspotter.domain.model.OsvQuery;
 import com.luisppb16.vulnspotter.domain.model.OsvResponse;
 import com.luisppb16.vulnspotter.domain.model.OsvVulnerability;
+import com.luisppb16.vulnspotter.domain.model.PackageKey;
 import com.luisppb16.vulnspotter.settings.VulnSpotterSettings;
 import java.io.IOException;
 import java.io.Serial;
@@ -30,7 +31,6 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
@@ -59,16 +59,28 @@ public class OsvClient {
   /** Safety bound for paginated results per scan. */
   private static final int MAX_PAGES = 5;
 
+  /**
+   * Fail-safe cap on the hydrated-records cache: {@link #hydrate} drops records the batch did not
+   * touch once the map grows past it (stamps otherwise keep matched records reused for the whole
+   * session, so ids from packages long dropped by the project would accumulate unbounded).
+   */
+  private static final int MAX_VULN_CACHE_ENTRIES = 5000;
+
   private static final int HTTP_TIMEOUT_MS = 10000;
   private static final int MAX_ATTEMPTS = 3;
   private static final long RETRY_BACKOFF_MS = 500;
 
   private final ObjectMapper objectMapper;
   private final ExecutorService executorService;
-  private final ConcurrentHashMap<String, CacheEntry<OsvResponse>> packageCache =
+  private final ConcurrentHashMap<PackageKey, CacheEntry<OsvResponse>> packageCache =
       new ConcurrentHashMap<>();
-  private final ConcurrentHashMap<String, CacheEntry<OsvVulnerability>> vulnCache =
-      new ConcurrentHashMap<>();
+
+  /**
+   * Full records by advisory id; freshness is the {@code modified}-stamp revalidation in {@link
+   * #hydrate} ({@link #invalidateCache} deliberately keeps them) and only the cap in {@link
+   * #hydrate} evicts.
+   */
+  private final ConcurrentHashMap<String, OsvVulnerability> vulnCache = new ConcurrentHashMap<>();
 
   public OsvClient() {
     this(Executors.newFixedThreadPool(16));
@@ -101,17 +113,23 @@ public class OsvClient {
     return new OsvResponse(new ArrayList<>(byId.values()));
   }
 
-  private static Set<String> collectIds(List<OsvResponse> minimalResults) {
-    Set<String> ids = new LinkedHashSet<>();
+  private static IdsToHydrate collectIdStamps(List<OsvResponse> minimalResults) {
+    Map<String, String> modifiedById = new LinkedHashMap<>();
+    Set<String> unstampedIds = new LinkedHashSet<>();
     for (OsvResponse response : minimalResults) {
       if (response == null || response.vulns() == null) continue;
       for (OsvVulnerability vuln : response.vulns()) {
-        if (vuln.id() != null && !vuln.id().isBlank()) {
-          ids.add(vuln.id());
+        if (vuln.id() == null || vuln.id().isBlank()) continue;
+        if (vuln.modified() == null || vuln.modified().isBlank()) {
+          unstampedIds.add(vuln.id());
+        } else {
+          modifiedById.put(vuln.id(), vuln.modified());
         }
       }
     }
-    return ids;
+    // A later page of the same batch may have proven the id's stamp; revalidation then applies.
+    unstampedIds.removeAll(modifiedById.keySet());
+    return new IdsToHydrate(modifiedById, unstampedIds);
   }
 
   /** True for failures worth retrying: 5xx, 429, timeouts. 4xx (except 429) fails fast. */
@@ -131,8 +149,9 @@ public class OsvClient {
     }
   }
 
-  private static String cacheKey(OsvPackage pkg) {
-    return pkg.ecosystem() + ":" + pkg.name() + ":" + pkg.version();
+  /** Identity of a package answer: name, version and ecosystem as a typed record. */
+  private static PackageKey key(OsvPackage pkg) {
+    return new PackageKey(pkg.name(), pkg.version(), pkg.ecosystem());
   }
 
   private static Instant cacheExpiration() {
@@ -143,10 +162,6 @@ public class OsvClient {
     return Instant.now().plus(Duration.ofMinutes(cacheMinutes));
   }
 
-  private static Optional<OsvResponse> toOptionalResponse(OsvResponse response) {
-    return Optional.ofNullable(emptyToNull(response));
-  }
-
   private static OsvResponse emptyToNull(OsvResponse response) {
     if (response == null || response.vulns() == null || response.vulns().isEmpty()) {
       return null;
@@ -154,14 +169,31 @@ public class OsvClient {
     return response;
   }
 
-  /** Drops withdrawn advisories, preserving the pagination token. */
-  private static OsvResponse filterWithdrawn(OsvResponse response) {
-    if (response == null || response.vulns() == null) {
-      return response;
+  /** True when the cached full record is exactly what OSV would return now (stamp equality). */
+  static boolean canTrustCached(OsvVulnerability cached, String batchModified) {
+    return cached != null && batchModified != null && batchModified.equals(cached.modified());
+  }
+
+  /**
+   * Runs the HTTP call with limited retries for transient failures; the verb-specific request is
+   * the only thing the two callers differ in.
+   */
+  private static String withRetry(HttpCall call) throws IOException {
+    IOException lastFailure = null;
+    for (int attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+      try {
+        return call.read();
+      } catch (IOException e) {
+        if (!isTransient(e)) {
+          throw e;
+        }
+        lastFailure = e;
+        if (attempt < MAX_ATTEMPTS) {
+          sleepBackoff(attempt);
+        }
+      }
     }
-    List<OsvVulnerability> active =
-        response.vulns().stream().filter(v -> !v.isWithdrawn()).toList();
-    return new OsvResponse(active, response.nextPageToken());
+    throw lastFailure;
   }
 
   /** Releases the internal thread pool. Called when the owning project service is disposed. */
@@ -170,49 +202,14 @@ public class OsvClient {
   }
 
   /**
-   * Discards every cached OSV answer — per-package batch results and hydrated vulnerability records
-   * alike. Called before forced (manual) scans and after a build-system re-import, which can change
-   * any dependency's resolved version and thus make old answers stale. Cheap: two map clears,
-   * thread-safe.
+   * Discards the cached per-package batch answers so the next scan re-queries OSV.dev's batch
+   * endpoint. Hydrated vulnerability records are deliberately kept: {@link #hydrate} revalidates
+   * them against the {@code modified} stamp of the fresh batch answer, so unchanged advisories are
+   * reused without a per-id GET no matter when they were cached. Thread-safe and cheap (one map
+   * clear).
    */
   public void invalidateCache() {
     packageCache.clear();
-    vulnCache.clear();
-  }
-
-  public CompletableFuture<Optional<OsvResponse>> checkDependency(
-      String packageName, String version, String ecosystem) {
-    Objects.requireNonNull(packageName, "Package name cannot be null");
-    Objects.requireNonNull(version, "Version cannot be null");
-    Objects.requireNonNull(ecosystem, "Ecosystem cannot be null");
-
-    String cacheKey = ecosystem + ":" + packageName + ":" + version;
-    CacheEntry<OsvResponse> entry = packageCache.get(cacheKey);
-    if (entry != null && entry.isFresh()) {
-      return CompletableFuture.completedFuture(toOptionalResponse(entry.value));
-    }
-
-    return CompletableFuture.supplyAsync(
-        () -> {
-          try {
-            OsvPackage osvPackage = new OsvPackage(packageName, ecosystem, version);
-            OsvQuery query = new OsvQuery(version, osvPackage);
-            String requestBody = objectMapper.writeValueAsString(query);
-            String responseBody = postWithRetry(ProjectConstants.OSV_API_URL, requestBody);
-
-            OsvResponse raw =
-                (responseBody == null || responseBody.isEmpty() || "{}".equals(responseBody.trim()))
-                    ? new OsvResponse(List.of())
-                    : objectMapper.readValue(responseBody, OsvResponse.class);
-            OsvResponse response = filterWithdrawn(raw);
-
-            packageCache.put(cacheKey, new CacheEntry<>(response, cacheExpiration()));
-            return toOptionalResponse(response);
-          } catch (IOException e) {
-            throw new OsvClientException("OSV query failed for " + packageName, e);
-          }
-        },
-        executorService);
   }
 
   /**
@@ -220,14 +217,13 @@ public class OsvClient {
    * returned list preserves the order of {@code packages}; entries without vulnerabilities are
    * {@code null}.
    */
-  public CompletableFuture<Optional<OsvBatchResponse>> checkDependencies(
-      List<OsvPackage> packages) {
+  public CompletableFuture<OsvBatchResponse> checkDependencies(List<OsvPackage> packages) {
     Objects.requireNonNull(packages, "Packages list cannot be null");
 
     return CompletableFuture.supplyAsync(() -> doCheckDependencies(packages), executorService);
   }
 
-  private Optional<OsvBatchResponse> doCheckDependencies(List<OsvPackage> packages) {
+  private OsvBatchResponse doCheckDependencies(List<OsvPackage> packages) {
     Instant exp = cacheExpiration();
     List<OsvResponse> finalResults = new ArrayList<>(Collections.nCopies(packages.size(), null));
     List<OsvQuery> queriesToFetch = new ArrayList<>();
@@ -235,7 +231,7 @@ public class OsvClient {
 
     for (int i = 0; i < packages.size(); i++) {
       OsvPackage pkg = packages.get(i);
-      CacheEntry<OsvResponse> entry = packageCache.get(cacheKey(pkg));
+      CacheEntry<OsvResponse> entry = packageCache.get(key(pkg));
       if (entry != null && entry.isFresh()) {
         finalResults.set(i, emptyToNull(entry.value));
       } else {
@@ -245,14 +241,14 @@ public class OsvClient {
     }
 
     if (queriesToFetch.isEmpty()) {
-      return Optional.of(new OsvBatchResponse(finalResults));
+      return new OsvBatchResponse(finalResults);
     }
 
     // 1. Batch lookup (minimal records: id + modified), chunked to the OSV batch limit.
     List<OsvResponse> minimalResults = fetchMinimalRecords(queriesToFetch);
 
-    // 2. Hydrate every distinct vulnerability id into a full record.
-    Map<String, OsvVulnerability> hydrated = hydrate(collectIds(minimalResults), exp);
+    // 2. Hydrate every distinct vulnerability id into a full record (revalidated by "modified").
+    Map<String, OsvVulnerability> hydrated = hydrate(collectIdStamps(minimalResults));
 
     // 3. Rebuild per-package responses with the full records and refresh the cache.
     for (int j = 0; j < fetchIndices.size(); j++) {
@@ -263,8 +259,7 @@ public class OsvClient {
         // Only cache a definitive "no vulnerabilities" when OSV actually answered this query.
         if (j < minimalResults.size()) {
           packageCache.put(
-              cacheKey(packages.get(originalIndex)),
-              new CacheEntry<>(new OsvResponse(List.of()), exp));
+              key(packages.get(originalIndex)), new CacheEntry<>(new OsvResponse(List.of()), exp));
         }
         continue;
       }
@@ -278,10 +273,10 @@ public class OsvClient {
 
       OsvResponse full = new OsvResponse(fullVulns);
       finalResults.set(originalIndex, emptyToNull(full));
-      packageCache.put(cacheKey(packages.get(originalIndex)), new CacheEntry<>(full, exp));
+      packageCache.put(key(packages.get(originalIndex)), new CacheEntry<>(full, exp));
     }
 
-    return Optional.of(new OsvBatchResponse(finalResults));
+    return new OsvBatchResponse(finalResults);
   }
 
   /** Runs the querybatch call in chunks, following per-result pagination tokens. */
@@ -298,7 +293,7 @@ public class OsvClient {
 
       for (int page = 0; page < MAX_PAGES && !chunk.isEmpty(); page++) {
         OsvBatchResponse batch = postBatch(chunk);
-        List<OsvResponse> batchResults = batch.results() == null ? List.of() : batch.results();
+        List<OsvResponse> batchResults = batch.results();
 
         List<OsvQuery> nextChunk = new ArrayList<>();
         List<Integer> nextIndices = new ArrayList<>();
@@ -345,33 +340,47 @@ public class OsvClient {
   }
 
   /**
-   * Fetches full records for the given ids, using the per-id cache. Individual failures degrade to
-   * the minimal record instead of failing the whole scan.
+   * Fetches full records for the given ids, using the per-id cache revalidated by the OSV {@code
+   * modified} stamp: a cached record whose stamp equals the one just returned by the batch lookup
+   * is provably current and is reused without a GET, regardless of when it was cached. Ids without
+   * a stamp are fetched fresh. Individual failures degrade to the minimal record instead of failing
+   * the whole scan.
    */
-  private Map<String, OsvVulnerability> hydrate(Set<String> ids, Instant exp) {
+  private Map<String, OsvVulnerability> hydrate(IdsToHydrate ids) {
     Map<String, OsvVulnerability> hydrated = new ConcurrentHashMap<>();
     List<CompletableFuture<Void>> tasks = new ArrayList<>();
 
-    for (String id : ids) {
-      CacheEntry<OsvVulnerability> cached = vulnCache.get(id);
-      if (cached != null && cached.isFresh()) {
-        hydrated.put(id, cached.value);
+    for (String id : ids.unstampedIds()) {
+      tasks.add(fetchAndCache(id, hydrated));
+    }
+    for (Map.Entry<String, String> entry : ids.modifiedById().entrySet()) {
+      String id = entry.getKey();
+      OsvVulnerability cached = vulnCache.get(id);
+      if (canTrustCached(cached, entry.getValue())) {
+        hydrated.put(id, cached);
         continue;
       }
-      tasks.add(
-          CompletableFuture.runAsync(
-              () -> {
-                OsvVulnerability full = fetchVulnerability(id);
-                if (full != null) {
-                  hydrated.put(id, full);
-                  vulnCache.put(id, new CacheEntry<>(full, exp));
-                }
-              },
-              executorService));
+      tasks.add(fetchAndCache(id, hydrated));
     }
 
     CompletableFuture.allOf(tasks.toArray(new CompletableFuture<?>[0])).join();
+    if (vulnCache.size() > MAX_VULN_CACHE_ENTRIES) {
+      // Long-session safety valve; a dropped id is refetched by a later batch that reports it.
+      vulnCache.keySet().removeIf(id -> !hydrated.containsKey(id));
+    }
     return hydrated;
+  }
+
+  private CompletableFuture<Void> fetchAndCache(String id, Map<String, OsvVulnerability> hydrated) {
+    return CompletableFuture.runAsync(
+        () -> {
+          OsvVulnerability full = fetchVulnerability(id);
+          if (full != null) {
+            hydrated.put(id, full);
+            vulnCache.put(id, full);
+          }
+        },
+        executorService);
   }
 
   private OsvVulnerability fetchVulnerability(String id) {
@@ -387,51 +396,42 @@ public class OsvClient {
 
   /** GET with limited retries for transient failures. */
   private String getWithRetry(String url) throws IOException {
-    IOException lastFailure = null;
-    for (int attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
-      try {
-        return HttpRequests.request(url)
-            .connectTimeout(HTTP_TIMEOUT_MS)
-            .readTimeout(HTTP_TIMEOUT_MS)
-            .readString();
-      } catch (IOException e) {
-        if (!isTransient(e)) {
-          throw e;
-        }
-        lastFailure = e;
-        if (attempt < MAX_ATTEMPTS) {
-          sleepBackoff(attempt);
-        }
-      }
-    }
-    throw lastFailure;
+    return withRetry(
+        () ->
+            HttpRequests.request(url)
+                .connectTimeout(HTTP_TIMEOUT_MS)
+                .readTimeout(HTTP_TIMEOUT_MS)
+                .readString());
   }
 
   /** POST with limited retries for transient failures. */
   private String postWithRetry(String url, String requestBody) throws IOException {
-    IOException lastFailure = null;
-    for (int attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
-      try {
-        return HttpRequests.post(url, "application/json")
-            .connectTimeout(HTTP_TIMEOUT_MS)
-            .readTimeout(HTTP_TIMEOUT_MS)
-            .connect(
-                request -> {
-                  request.write(requestBody);
-                  return request.readString();
-                });
-      } catch (IOException e) {
-        if (!isTransient(e)) {
-          throw e;
-        }
-        lastFailure = e;
-        if (attempt < MAX_ATTEMPTS) {
-          sleepBackoff(attempt);
-        }
-      }
-    }
-    throw lastFailure;
+    return withRetry(
+        () ->
+            HttpRequests.post(url, "application/json")
+                .connectTimeout(HTTP_TIMEOUT_MS)
+                .readTimeout(HTTP_TIMEOUT_MS)
+                .connect(
+                    request -> {
+                      request.write(requestBody);
+                      return request.readString();
+                    }));
   }
+
+  /** A blocking HTTP read, expressed the way HttpRequests builds one. */
+  @FunctionalInterface
+  private interface HttpCall {
+    String read() throws IOException;
+  }
+
+  /**
+   * Hydration input from the batch answer: id → "modified" stamp (insertion-ordered, stable for
+   * hydrate), plus the ids whose batch record carries no usable stamp. A missing {@code modified}
+   * proves nothing about a cached copy, so unstamped ids are never served from the cache — they are
+   * fetched every scan, because omitting them silently degraded those advisories to bare id-only
+   * rows that lost severity, summary, ranges, fixed versions and references.
+   */
+  private record IdsToHydrate(Map<String, String> modifiedById, Set<String> unstampedIds) {}
 
   /** Signals an OSV API failure; carried by the future so callers can show a real error. */
   public static final class OsvClientException extends RuntimeException {

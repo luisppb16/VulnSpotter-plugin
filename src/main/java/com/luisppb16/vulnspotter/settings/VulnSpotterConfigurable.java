@@ -27,7 +27,6 @@ import org.jetbrains.annotations.Nullable;
 /** Settings page (Settings | Tools | VulnSpotter) backed by {@link VulnSpotterSettings}. */
 public class VulnSpotterConfigurable implements Configurable {
 
-  private JPanel panel;
   private JBCheckBox autoScanCheckBox;
   private JSpinner cacheSpinner;
   private JComboBox<String> minimumSeverityCombo;
@@ -55,17 +54,15 @@ public class VulnSpotterConfigurable implements Configurable {
                 + " hidden from results.");
     ignoredHint.setForeground(JBUI.CurrentTheme.ContextHelp.FOREGROUND);
 
-    panel =
-        FormBuilder.createFormBuilder()
-            .addComponent(autoScanCheckBox)
-            .addComponent(analyzeOnOpenCheckBox)
-            .addLabeledComponent("Result cache duration (minutes):", cacheSpinner)
-            .addLabeledComponent("Minimum severity to report:", minimumSeverityCombo)
-            .addLabeledComponent("Ignored vulnerability ids:", ignoredScroll, true)
-            .addComponent(ignoredHint)
-            .addComponentFillVertically(new JPanel(), 0)
-            .getPanel();
-    return panel;
+    return FormBuilder.createFormBuilder()
+        .addComponent(autoScanCheckBox)
+        .addComponent(analyzeOnOpenCheckBox)
+        .addLabeledComponent("Result cache duration (minutes):", cacheSpinner)
+        .addLabeledComponent("Minimum severity to report:", minimumSeverityCombo)
+        .addLabeledComponent("Ignored vulnerability ids:", ignoredScroll, true)
+        .addComponent(ignoredHint)
+        .addComponentFillVertically(new JPanel(), 0)
+        .getPanel();
   }
 
   @Override
@@ -100,7 +97,6 @@ public class VulnSpotterConfigurable implements Configurable {
 
   @Override
   public void disposeUIResources() {
-    panel = null;
     autoScanCheckBox = null;
     cacheSpinner = null;
     minimumSeverityCombo = null;

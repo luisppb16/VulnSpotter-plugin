@@ -15,6 +15,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.luisppb16.vulnspotter.application.service.VulnerabilityScannerService.ScanResult;
 import com.luisppb16.vulnspotter.domain.model.OsvPackage;
 import com.luisppb16.vulnspotter.domain.model.OsvVulnerability;
+import com.luisppb16.vulnspotter.testsupport.VulnFixtures;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Collections;
@@ -51,8 +52,8 @@ class ReportExportServiceTest {
                         new OsvVulnerability.Range(
                             "ECOSYSTEM",
                             List.of(
-                                new OsvVulnerability.Event("0", null),
-                                new OsvVulnerability.Event(null, "2.9.10")))),
+                                new OsvVulnerability.Event("0", null, null, null),
+                                new OsvVulnerability.Event(null, "2.9.10", null, null)))),
                     null,
                     Map.of())),
             Collections.emptyList(),
@@ -114,7 +115,7 @@ class ReportExportServiceTest {
   @Test
   void csvNeutralizesFormulaInjection() throws Exception {
     OsvVulnerability vuln =
-        new OsvVulnerability(
+        VulnFixtures.vuln(
             "=cmd|calc",
             "=HYPERLINK(\"http://evil\")",
             "details",
@@ -122,7 +123,7 @@ class ReportExportServiceTest {
             List.of(),
             List.of(),
             Map.of());
-    ScanResult result = new ScanResult(new OsvPackage("g:a", "Maven", "1.0"), true, List.of(vuln));
+    ScanResult result = VulnFixtures.result(VulnFixtures.pkg("g:a", "1.0"), true, vuln);
     Path csvPath = tempDir.resolve("inject.csv");
 
     ReportExportService.exportCsv(List.of(result), csvPath);

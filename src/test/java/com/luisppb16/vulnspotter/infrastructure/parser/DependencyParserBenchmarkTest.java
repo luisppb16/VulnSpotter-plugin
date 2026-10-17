@@ -158,7 +158,7 @@ class DependencyParserBenchmarkTest {
     long startTime = System.nanoTime();
     int iterations = 10;
     for (int i = 0; i < iterations; i++) {
-      List<OsvPackage> result = DependencyParser.parseDependencies(project);
+      List<OsvPackage> result = DependencyParser.parseDependencies(project).packages();
       if (result.size() != depCount) {
         throw new RuntimeException("Unexpected result size: " + result.size());
       }

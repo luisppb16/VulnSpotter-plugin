@@ -23,10 +23,7 @@ public record OsvQuery(
     Objects.requireNonNull(packageInfo, "Package info cannot be null");
   }
 
-  public OsvQuery(String version, OsvPackageQuery packageInfo) {
-    this(version, packageInfo, null);
-  }
-
+  /** OSV always queries by ecosystem package name plus the version being looked up. */
   public OsvQuery(String version, OsvPackage pkg) {
     this(version, new OsvPackageQuery(pkg.name(), pkg.ecosystem()), null);
   }

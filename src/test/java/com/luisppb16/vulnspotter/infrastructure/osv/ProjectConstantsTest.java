@@ -18,7 +18,10 @@ class ProjectConstantsTest {
 
   @Test
   void testConstants() {
-    assertEquals("https://api.osv.dev/v1/query", ProjectConstants.OSV_API_URL);
+    assertEquals("https://api.osv.dev/v1/querybatch", ProjectConstants.OSV_API_BATCH_URL);
+    assertEquals("https://api.osv.dev/v1/vulns/", ProjectConstants.OSV_API_VULNS_URL);
+    assertEquals("https://osv.dev/vulnerability/", ProjectConstants.OSV_WEB_VULN_URL);
+    assertEquals("https://nvd.nist.gov/vuln/detail/", ProjectConstants.NVD_VULN_URL);
   }
 
   @Test

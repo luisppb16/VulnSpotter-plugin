@@ -21,6 +21,7 @@ import com.intellij.psi.xml.XmlFile;
 import com.intellij.psi.xml.XmlTag;
 import com.intellij.util.IncorrectOperationException;
 import com.luisppb16.vulnspotter.domain.service.VersionUtil;
+import com.luisppb16.vulnspotter.infrastructure.parser.Manifests;
 import com.luisppb16.vulnspotter.ui.notification.VulnSpotterNotifications;
 import org.jetbrains.annotations.NotNull;
 
@@ -62,14 +63,6 @@ public class UpdateDependencyQuickFix implements IntentionAction {
         || c == '/';
   }
 
-  private static void notify(Project project, String message, NotificationType type) {
-    switch (type) {
-      case INFORMATION -> VulnSpotterNotifications.notifyInfo(project, "VulnSpotter", message);
-      case WARNING -> VulnSpotterNotifications.notifyWarning(project, "VulnSpotter", message);
-      case ERROR -> VulnSpotterNotifications.notifyError(project, "VulnSpotter", message);
-    }
-  }
-
   @Override
   public @NotNull String getText() {
     return "Update " + artifactId() + " to " + targetVersion;
@@ -77,7 +70,7 @@ public class UpdateDependencyQuickFix implements IntentionAction {
 
   @Override
   public @NotNull String getFamilyName() {
-    return "VulnSpotter";
+    return VulnSpotterNotifications.TITLE;
   }
 
   private String artifactId() {
@@ -87,8 +80,7 @@ public class UpdateDependencyQuickFix implements IntentionAction {
 
   @Override
   public boolean isAvailable(@NotNull Project project, Editor editor, PsiFile file) {
-    return file != null
-        && ("pom.xml".equals(file.getName()) || "build.gradle".equals(file.getName()));
+    return file != null && Manifests.isSupported(file.getName());
   }
 
   @Override
@@ -104,10 +96,10 @@ public class UpdateDependencyQuickFix implements IntentionAction {
   private void updatePom(Project project, XmlFile file, Editor editor) {
     XmlTag dependencyTag = findDependencyTag(file, editor);
     if (dependencyTag == null) {
-      notify(
+      VulnSpotterNotifications.notify(
           project,
-          "Could not locate the <dependency> declaration for " + packageName + ".",
-          NotificationType.WARNING);
+          NotificationType.WARNING,
+          "Could not locate the <dependency> declaration for " + packageName + ".");
       return;
     }
     XmlTag versionTag = dependencyTag.findFirstSubTag("version");
@@ -122,15 +114,15 @@ public class UpdateDependencyQuickFix implements IntentionAction {
         propertyTag.getValue().setText(targetVersion);
         return;
       }
-      notify(
+      VulnSpotterNotifications.notify(
           project,
+          NotificationType.WARNING,
           "The version of "
               + packageName
               + " is declared via the ${"
               + propertyName
               + "} property, which is not defined in this pom. Update it in the parent or"
-              + " <dependencyManagement> section.",
-          NotificationType.WARNING);
+              + " <dependencyManagement> section.");
       return;
     }
 
@@ -143,12 +135,12 @@ public class UpdateDependencyQuickFix implements IntentionAction {
                 .createTagFromText("<version>" + targetVersion + "</version>");
         dependencyTag.addSubTag(newVersion, false);
       } catch (IncorrectOperationException _) {
-        notify(
+        VulnSpotterNotifications.notify(
             project,
+            NotificationType.WARNING,
             "Could not insert a <version> for "
                 + packageName
-                + ". Its version is inherited from <dependencyManagement> or a parent pom.",
-            NotificationType.WARNING);
+                + ". Its version is inherited from <dependencyManagement> or a parent pom.");
       }
       return;
     }
@@ -156,12 +148,12 @@ public class UpdateDependencyQuickFix implements IntentionAction {
     // Guard against downgrading / re-applying: only write when the current literal is the
     // vulnerable
     // version and the target is strictly greater.
-    if (versionText != null && !versionText.equals(currentVersion)) {
+    if (!versionText.equals(currentVersion)) {
       if (VersionUtil.compareVersions(versionText, targetVersion) >= 0) {
-        notify(
+        VulnSpotterNotifications.notify(
             project,
-            packageName + " is already at version " + versionText + " (>= " + targetVersion + ").",
-            NotificationType.INFORMATION);
+            NotificationType.INFORMATION,
+            packageName + " is already at version " + versionText + " (>= " + targetVersion + ").");
         return;
       }
     }
@@ -210,7 +202,9 @@ public class UpdateDependencyQuickFix implements IntentionAction {
       if (leftBounded && rightBounded) {
         document.replaceString(idx, end, newCoordinate);
         changed = true;
-        text = document.getText();
+        // Track the replaced text locally: re-reading the document on every replacement would
+        // recopy the whole buffer per coordinate.
+        text = text.substring(0, idx) + newCoordinate + text.substring(end);
         from = idx + newCoordinate.length();
       } else {
         from = idx + 1;
@@ -218,8 +212,9 @@ public class UpdateDependencyQuickFix implements IntentionAction {
     }
     PsiDocumentManager.getInstance(project).commitDocument(document);
     if (!changed) {
-      notify(
+      VulnSpotterNotifications.notify(
           project,
+          NotificationType.WARNING,
           "Could not find the literal coordinate \""
               + oldCoordinate
               + "\" in "
@@ -227,8 +222,7 @@ public class UpdateDependencyQuickFix implements IntentionAction {
               + ". The version may be declared via a property or version catalog; update it there"
               + " to "
               + targetVersion
-              + ".",
-          NotificationType.WARNING);
+              + ".");
     }
   }
 

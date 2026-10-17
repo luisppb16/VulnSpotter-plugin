@@ -36,10 +36,14 @@ import com.intellij.util.IconUtil;
 import com.intellij.util.ui.JBUI;
 import com.intellij.util.ui.UIUtil;
 import com.luisppb16.vulnspotter.application.service.VulnerabilityScannerService;
+import com.luisppb16.vulnspotter.domain.model.Ecosystem;
 import com.luisppb16.vulnspotter.domain.model.OsvVulnerability;
 import com.luisppb16.vulnspotter.domain.service.FixedVersionResolver;
 import com.luisppb16.vulnspotter.domain.service.SeverityAnalyzer;
+import com.luisppb16.vulnspotter.infrastructure.osv.ProjectConstants;
+import com.luisppb16.vulnspotter.infrastructure.parser.IgnoreFileStore;
 import com.luisppb16.vulnspotter.infrastructure.report.ReportExportService;
+import com.luisppb16.vulnspotter.infrastructure.report.VulnerabilityCardComposer;
 import com.luisppb16.vulnspotter.infrastructure.report.VulnerabilityReportBuilder;
 import com.luisppb16.vulnspotter.ui.notification.VulnSpotterNotifications;
 import com.luisppb16.vulnspotter.util.HtmlEscaper;
@@ -47,20 +51,23 @@ import java.awt.*;
 import java.awt.datatransfer.StringSelection;
 import java.io.IOException;
 import java.io.Serial;
-import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.Paths;
-import java.nio.file.StandardOpenOption;
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
+import java.util.Vector;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -82,6 +89,8 @@ public final class VulnSpotterToolWindow implements Disposable {
 
   private static final String UNKNOWN = FixedVersionResolver.UNKNOWN;
   private static final String DIV_CLOSE = "</div>";
+  private static final String EMPTY_DETAILS_HTML =
+      "<h1>VulnSpotter</h1><p>Select a dependency to see details.</p>";
 
   private static final String COPY_TO_CLIPBOARD_JS =
       """
@@ -119,7 +128,20 @@ public final class VulnSpotterToolWindow implements Disposable {
   private final JBCheckBox vulnerableOnlyCheckbox;
   private final JProgressBar progressBar;
   private final List<VulnerabilityScannerService.ScanResult> scanResults = new ArrayList<>();
-  private final SeverityAnalyzer severityAnalyzer = new SeverityAnalyzer();
+
+  /**
+   * Pre-lowercased "package name + ids + aliases" text per row, aligned with {@link #scanResults},
+   * so the live filter matches by a single {@code contains} per row instead of re-lowercasing every
+   * field on every keystroke.
+   */
+  private final List<String> searchBlobs = new ArrayList<>();
+
+  /** Precomputed severity icons; emptied on theme change so colors re-resolve. */
+  private final Map<String, Icon> severityIcons = new HashMap<>();
+
+  /** Prebuilt light/dark document shells; only the body varies between renders. */
+  private final Map<Boolean, String> htmlShells = new ConcurrentHashMap<>();
+
   private volatile CompletableFuture<List<VulnerabilityScannerService.ScanResult>> activeScan;
 
   public VulnSpotterToolWindow(Project project) {
@@ -225,13 +247,7 @@ public final class VulnSpotterToolWindow implements Disposable {
         .addListSelectionListener(
             e -> {
               if (!e.getValueIsAdjusting()) {
-                int row = resultsTable.getSelectedRow();
-                if (row >= 0) {
-                  int modelRow = resultsTable.convertRowIndexToModel(row);
-                  if (modelRow < scanResults.size()) {
-                    showDetails(scanResults.get(modelRow));
-                  }
-                }
+                selectedResult().ifPresent(this::showDetails);
               }
             });
 
@@ -254,7 +270,7 @@ public final class VulnSpotterToolWindow implements Disposable {
     content.add(mainPanel, BorderLayout.CENTER);
     cardLayout.show(mainPanel, "EMPTY");
 
-    loadDetailsHtml(generateHtml("<h1>VulnSpotter</h1><p>Select a dependency to see details.</p>"));
+    loadDetailsHtml(generateHtml(EMPTY_DETAILS_HTML));
 
     // Re-render the details panel when the IDE theme changes
     ApplicationManager.getApplication()
@@ -264,50 +280,15 @@ public final class VulnSpotterToolWindow implements Disposable {
             LafManagerListener.TOPIC,
             (LafManagerListener)
                 source -> {
-                  int row = resultsTable.getSelectedRow();
-                  if (row >= 0) {
-                    int modelRow = resultsTable.convertRowIndexToModel(row);
-                    if (modelRow < scanResults.size()) {
-                      showDetails(scanResults.get(modelRow));
-                      return;
-                    }
+                  severityIcons.clear();
+                  htmlShells.clear();
+                  Optional<VulnerabilityScannerService.ScanResult> selected = selectedResult();
+                  if (selected.isPresent()) {
+                    showDetails(selected.get());
+                  } else {
+                    loadDetailsHtml(generateHtml(EMPTY_DETAILS_HTML));
                   }
-                  loadDetailsHtml(
-                      generateHtml(
-                          "<h1>VulnSpotter</h1><p>Select a dependency to see details.</p>"));
                 });
-  }
-
-  /** Builds an ecosystem-appropriate manifest snippet pinning the fixed version. */
-  private static String buildUpgradeSnippet(
-      VulnerabilityScannerService.ScanResult result, String fix) {
-    String name = result.pkg().name();
-    String ecosystem = result.pkg().ecosystem();
-    if (ecosystem == null) {
-      return name + ":" + fix;
-    }
-    return switch (ecosystem) {
-      case "Maven" -> {
-        int colon = name.indexOf(':');
-        String group = colon >= 0 ? name.substring(0, colon) : name;
-        String artifact = colon >= 0 ? name.substring(colon + 1) : name;
-        yield "<dependency>\n"
-            + "  <groupId>"
-            + group
-            + "</groupId>\n"
-            + "  <artifactId>"
-            + artifact
-            + "</artifactId>\n"
-            + "  <version>"
-            + fix
-            + "</version>\n"
-            + "</dependency>";
-      }
-      case "npm" -> "npm install " + name + "@" + fix;
-      case "PyPI" -> name + "==" + fix;
-      case "Go" -> name + " v" + fix;
-      default -> name + ":" + fix;
-    };
   }
 
   private static String classificationLabel(boolean isDirect, Set<String> roots) {
@@ -320,17 +301,123 @@ public final class VulnSpotterToolWindow implements Disposable {
     return "Direct and transitive dependency";
   }
 
-  /** Only http(s) links are rendered; javascript:/file: URLs from advisories are dropped. */
-  private static boolean isSafeUrl(String url) {
-    if (url == null || url.isBlank()) {
-      return false;
+  /** Pre-lowercased "name + vulnerability ids + aliases" text searched by the live filter. */
+  private static String buildSearchBlob(VulnerabilityScannerService.ScanResult result) {
+    StringBuilder blob = new StringBuilder(result.pkg().name().toLowerCase(Locale.ROOT));
+    for (OsvVulnerability vuln : result.vulnerabilities()) {
+      appendSearchTerm(blob, vuln.id());
+      if (vuln.aliases() != null) {
+        vuln.aliases().forEach(alias -> appendSearchTerm(blob, alias));
+      }
     }
-    String lower = url.trim().toLowerCase(Locale.ROOT);
-    return lower.startsWith("http://") || lower.startsWith("https://");
+    return blob.toString();
+  }
+
+  private static void appendSearchTerm(StringBuilder blob, String term) {
+    if (term != null && !term.isBlank()) {
+      blob.append('\n').append(term.toLowerCase(Locale.ROOT));
+    }
+  }
+
+  private static String buildHtmlShell(boolean isDark) {
+    HtmlTheme theme =
+        new HtmlTheme(
+            isDark ? "#1e1e1e" : "#ffffff",
+            isDark ? "#d4d4d4" : "#333333",
+            isDark ? "#252526" : "#ffffff",
+            isDark ? "#454545" : "#e0e0e0");
+
+    String headingColor = isDark ? "#ffffff" : "#000000";
+
+    return "<html><head><style>"
+        + "body { font-family: 'Inter', -apple-system, sans-serif; padding: 24px; background: "
+        + theme.bgColor()
+        + "; color: "
+        + theme.textColor()
+        + "; line-height: 1.6; }"
+        + "h1 { font-size: 24px; font-weight: 700; margin: 0; color: "
+        + headingColor
+        + "; }"
+        + ".version { color: #888; margin-top: 4px; margin-bottom: 24px; font-size: 14px; }"
+        + ".section-title { font-weight: 700; margin-top: 24px; margin-bottom: 12px; font-size: 16px; border-bottom: 1px solid "
+        + theme.borderColor()
+        + "; padding-bottom: 8px; }"
+        + ".safe-banner { background: rgba(67, 160, 71, 0.1); color: #43a047; padding: 16px; border-radius: 8px; font-weight: 600; margin: 24px 0; border: 1px solid #43a047; }"
+        + ".path-header { font-weight: 600; margin-top: 16px; margin-bottom: 8px; color: #2196f3; font-size: 14px; }"
+        + ".snyk-chain { font-family: 'JetBrains Mono', monospace; background: "
+        + (isDark ? "#2d2d2d" : "#f5f5f5")
+        + "; padding: 12px; border-radius: 6px; margin: 8px 0; font-size: 13px; }"
+        + ".chain-item { padding: 4px 0; display: flex; align-items: center; }"
+        + ".connector { color: #888; margin-right: 8px; }"
+        + ".icon { margin-right: 6px; }"
+        + ".target { color: #e53935; font-weight: 700; }"
+        + ".remediation-box { background: "
+        + (isDark ? "#1a2a3a" : "#e3f2fd")
+        + "; border: 1px solid #2196f3; border-radius: 8px; padding: 16px; margin: 16px 0; }"
+        + ".remediation-title { font-weight: 800; color: #2196f3; text-transform: uppercase; font-size: 12px; margin-bottom: 8px; letter-spacing: 0.5px; }"
+        + ".dep-classification { font-size: 12px; font-weight: 600; color: "
+        + (isDark ? "#9db8d8" : "#1565c0")
+        + "; margin-bottom: 10px; }"
+        + ".ecosystem-tag { display: inline-block; background: "
+        + (isDark ? "#333" : "#eee")
+        + "; color: "
+        + (isDark ? "#ccc" : "#555")
+        + "; padding: 1px 6px; border-radius: 4px; font-size: 11px; font-weight: 600; margin-right: 4px; }"
+        + ".affected-range { font-size: 12px; color: #888; margin: 8px 0; font-family: 'JetBrains Mono', monospace; }"
+        + ".card { background: "
+        + theme.cardBg()
+        + "; border: 1px solid "
+        + theme.borderColor()
+        + "; border-radius: 12px; padding: 20px; margin-bottom: 20px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); }"
+        + ".card-header { display: flex; align-items: center; margin-bottom: 12px; gap: 10px; flex-wrap: wrap; }"
+        + ".badge { padding: 4px 10px; border-radius: 20px; color: white; font-size: 11px; font-weight: 700; text-transform: uppercase; }"
+        + ".cvss-score { font-size: 12px; font-weight: 600; color: #888; background: "
+        + (isDark ? "#333" : "#eee")
+        + "; padding: 2px 8px; border-radius: 4px; }"
+        + VulnerabilityCardComposer.badgeCssRules()
+        + ".vuln-id { font-weight: 600; font-size: 14px; }"
+        + ".cve-alias { font-size: 12px; margin-left: 4px; }"
+        + ".vuln-summary { font-size: 16px; font-weight: 600; margin-bottom: 12px; color: "
+        + (isDark ? "#eee" : "#222")
+        + "; }"
+        + ".fixed-box { background: rgba(67, 160, 71, 0.1); color: #2e7d32; padding: 8px 12px; border-radius: 6px; font-weight: 600; display: inline-flex; align-items: center; gap: 8px; margin: 12px 0; border: 1px solid rgba(67, 160, 71, 0.2); }"
+        + ".copy-btn { cursor: pointer; background: #2196f3; color: white; border: none; padding: 2px 8px; border-radius: 4px; font-size: 10px; transition: background 0.2s; }"
+        + ".copy-btn:hover { background: #1976d2; }"
+        + ".details { font-size: 13px; color: #888; margin-top: 12px; max-height: 150px; overflow-y: auto; background: "
+        + (isDark ? "#1e1e1e" : "#fcfcfc")
+        + "; padding: 10px; border-radius: 4px; }"
+        + ".references-section { margin-top: 20px; border-top: 1px solid "
+        + theme.borderColor()
+        + "; padding-top: 16px; }"
+        + ".references-title { font-weight: 800; color: #888; text-transform: uppercase; font-size: 11px; margin-bottom: 10px; }"
+        + ".reference-item { font-size: 12px; margin-bottom: 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }"
+        + "a { color: #2196f3; text-decoration: none; font-weight: 500; } a:hover { text-decoration: underline; }"
+        + "code { font-family: 'JetBrains Mono', monospace; background: rgba(0,0,0,0.05); padding: 2px 4px; border-radius: 3px; }"
+        + "</style>"
+        + "<script>"
+        + COPY_TO_CLIPBOARD_JS
+        + "</script>"
+        + "</head><body>";
+  }
+
+  private static Icon resolveSeverityIcon(String s) {
+    return switch (s) {
+      case SeverityAnalyzer.CRITICAL -> IconUtil.colorize(AllIcons.General.Error, COLOR_CRITICAL);
+      case SeverityAnalyzer.HIGH -> IconUtil.colorize(AllIcons.General.Warning, COLOR_HIGH);
+      case SeverityAnalyzer.MEDIUM -> IconUtil.colorize(AllIcons.General.Note, COLOR_MEDIUM);
+      case SeverityAnalyzer.LOW -> IconUtil.colorize(AllIcons.General.Information, COLOR_LOW);
+      case SeverityAnalyzer.UNKNOWN -> AllIcons.General.QuestionDialog;
+      default -> IconUtil.colorize(AllIcons.General.InspectionsOK, COLOR_LOW);
+    };
   }
 
   @Override
   public void dispose() {
+    cancelScan();
+  }
+
+  /** Cancels the in-flight scan, if any. */
+  private void cancelScan() {
     CompletableFuture<List<VulnerabilityScannerService.ScanResult>> scan = activeScan;
     if (scan != null) {
       scan.cancel(true);
@@ -381,7 +468,7 @@ public final class VulnSpotterToolWindow implements Disposable {
                     result.vulnerabilities().stream()
                         .findFirst()
                         .ifPresent(
-                            v -> BrowserUtil.browse("https://osv.dev/vulnerability/" + v.id()))));
+                            v -> BrowserUtil.browse(ProjectConstants.OSV_WEB_VULN_URL + v.id()))));
     menu.add(openOsv);
 
     // Submenu to open every vulnerability advisory of the selected dependency at once.
@@ -392,20 +479,19 @@ public final class VulnSpotterToolWindow implements Disposable {
           @Override
           public void menuSelected(MenuEvent e) {
             openAll.removeAll();
-            int row = resultsTable.getSelectedRow();
-            if (row < 0) return;
-            int modelRow = resultsTable.convertRowIndexToModel(row);
-            if (modelRow >= scanResults.size()) return;
-            VulnerabilityScannerService.ScanResult result = scanResults.get(modelRow);
-            for (OsvVulnerability vuln : result.vulnerabilities()) {
-              JMenuItem item = new JMenuItem(vuln.id());
-              item.addActionListener(
-                  ev -> BrowserUtil.browse("https://osv.dev/vulnerability/" + vuln.id()));
-              openAll.add(item);
-            }
-            if (openAll.getItemCount() == 0) {
-              openAll.add(new JMenuItem("No vulnerabilities"));
-            }
+            selectedResult()
+                .filter(result -> !result.vulnerabilities().isEmpty())
+                .ifPresentOrElse(
+                    result -> {
+                      for (OsvVulnerability vuln : result.vulnerabilities()) {
+                        JMenuItem item = new JMenuItem(vuln.id());
+                        item.addActionListener(
+                            ev ->
+                                BrowserUtil.browse(ProjectConstants.OSV_WEB_VULN_URL + vuln.id()));
+                        openAll.add(item);
+                      }
+                    },
+                    () -> openAll.add(new JMenuItem("No vulnerabilities")));
           }
 
           @Override
@@ -454,7 +540,11 @@ public final class VulnSpotterToolWindow implements Disposable {
                             fix ->
                                 CopyPasteManager.getInstance()
                                     .setContents(
-                                        new StringSelection(buildUpgradeSnippet(result, fix))))));
+                                        new StringSelection(
+                                            Ecosystem.upgradeSnippet(
+                                                result.pkg().ecosystem(),
+                                                result.pkg().name(),
+                                                fix))))));
     menu.add(copySnippet);
 
     menu.addSeparator();
@@ -472,23 +562,13 @@ public final class VulnSpotterToolWindow implements Disposable {
         .executeOnPooledThread(
             () -> {
               try {
-                String base = project.getBasePath();
-                if (base == null) {
-                  return;
-                }
-                Path ignoreFile = Paths.get(base, ".vulnspotterignore");
-                String line = entry + System.lineSeparator();
-                if (Files.exists(ignoreFile)) {
-                  Files.writeString(ignoreFile, line, StandardOpenOption.APPEND);
-                } else {
-                  Files.writeString(ignoreFile, line, StandardOpenOption.CREATE);
-                }
+                IgnoreFileStore.appendEntry(project, entry);
                 ApplicationManager.getApplication()
                     .invokeLater(
                         () ->
                             VulnSpotterNotifications.notifyInfo(
                                 project,
-                                "VulnSpotter",
+                                VulnSpotterNotifications.TITLE,
                                 "Added \"" + entry + "\" to .vulnspotterignore. Re-scan to apply."),
                         project.getDisposed());
               } catch (IOException ex) {
@@ -497,27 +577,33 @@ public final class VulnSpotterToolWindow implements Disposable {
                         () ->
                             VulnSpotterNotifications.notifyError(
                                 project,
-                                "VulnSpotter",
+                                VulnSpotterNotifications.TITLE,
                                 "Could not update .vulnspotterignore: " + ex.getMessage()),
                         project.getDisposed());
               }
             });
   }
 
-  private void withSelectedResult(Consumer<VulnerabilityScannerService.ScanResult> consumer) {
+  /** The scan result backing the currently selected table row, or empty when none is selected. */
+  private Optional<VulnerabilityScannerService.ScanResult> selectedResult() {
     int row = resultsTable.getSelectedRow();
-    if (row < 0) return;
-    int modelRow = resultsTable.convertRowIndexToModel(row);
-    if (modelRow < scanResults.size()) {
-      consumer.accept(scanResults.get(modelRow));
+    if (row < 0) {
+      return Optional.empty();
     }
+    int modelRow = resultsTable.convertRowIndexToModel(row);
+    return modelRow < scanResults.size()
+        ? Optional.of(scanResults.get(modelRow))
+        : Optional.empty();
+  }
+
+  private void withSelectedResult(Consumer<VulnerabilityScannerService.ScanResult> consumer) {
+    selectedResult().ifPresent(consumer);
   }
 
   private void applyFilters() {
     @SuppressWarnings("unchecked")
     TableRowSorter<DefaultTableModel> sorter =
         (TableRowSorter<DefaultTableModel>) resultsTable.getRowSorter();
-    if (sorter == null) return;
 
     String searchText = searchField.getText().toLowerCase(Locale.ROOT);
     boolean vulnerableOnly = vulnerableOnlyCheckbox.isSelected();
@@ -534,28 +620,12 @@ public final class VulnSpotterToolWindow implements Disposable {
             if (!hasSearch) {
               return true;
             }
-            String name = entry.getStringValue(1).toLowerCase(Locale.ROOT);
-            if (name.contains(searchText)) {
-              return true;
-            }
-            // Also match CVE aliases and vulnerability ids so users can search "CVE-2024-1234".
+            // Also match CVE aliases and vulnerability ids so users can search "CVE-2024-1234";
+            // the prebuilt blob covers name and every id/alias of the row.
             int modelRow = entry.getIdentifier();
-            if (modelRow >= 0 && modelRow < scanResults.size()) {
-              VulnerabilityScannerService.ScanResult result = scanResults.get(modelRow);
-              for (OsvVulnerability vuln : result.vulnerabilities()) {
-                if (vuln.id() != null && vuln.id().toLowerCase(Locale.ROOT).contains(searchText)) {
-                  return true;
-                }
-                if (vuln.aliases() != null) {
-                  for (String alias : vuln.aliases()) {
-                    if (alias != null && alias.toLowerCase(Locale.ROOT).contains(searchText)) {
-                      return true;
-                    }
-                  }
-                }
-              }
-            }
-            return false;
+            String blob =
+                modelRow >= 0 && modelRow < searchBlobs.size() ? searchBlobs.get(modelRow) : "";
+            return blob.contains(searchText);
           }
         });
 
@@ -567,8 +637,10 @@ public final class VulnSpotterToolWindow implements Disposable {
       resultsTable.getEmptyText().setText("No results");
       return;
     }
-    long vulnerable = scanResults.stream().filter(r -> r.vulnerable()).count();
-    if (vulnerableOnlyCheckbox.isSelected() && vulnerable == 0) {
+    // One short-circuited pass: applyFilters runs per keystroke, and only the "any vulnerable"
+    // question is needed (never the counts a full ScanSummary roll-up computes).
+    if (vulnerableOnlyCheckbox.isSelected()
+        && scanResults.stream().noneMatch(VulnerabilityScannerService.ScanResult::vulnerable)) {
       resultsTable
           .getEmptyText()
           .setText(
@@ -581,21 +653,12 @@ public final class VulnSpotterToolWindow implements Disposable {
   }
 
   public void runScan() {
-    scanButton.setEnabled(false);
-    exportButton.setEnabled(false);
-    cancelButton.setVisible(true);
-    statusLabel.setText("Scanning...");
-    progressBar.setVisible(true);
-    tableModel.setRowCount(0);
-    scanResults.clear();
-    // A new scan is a fresh view: drop any leftover search query so results are not hidden.
-    searchField.setText("");
-
     CompletableFuture<List<VulnerabilityScannerService.ScanResult>> future =
         VulnerabilityScannerService.getInstance(project)
             .scanDependencies(true)
             .orTimeout(SCAN_TIMEOUT_SECONDS, TimeUnit.SECONDS);
     activeScan = future;
+    ScanUiPhase.SCANNING.apply(this, "Scanning...", false);
 
     future
         .thenAccept(
@@ -627,78 +690,88 @@ public final class VulnSpotterToolWindow implements Disposable {
             });
   }
 
-  private void cancelScan() {
-    CompletableFuture<List<VulnerabilityScannerService.ScanResult>> scan = activeScan;
-    if (scan != null) {
-      scan.cancel(true);
-    }
-  }
-
   private void onScanFinished(List<VulnerabilityScannerService.ScanResult> results) {
     activeScan = null;
     scanResults.addAll(results);
-    VulnerabilityScannerService.getInstance(project).updateResults(results);
+    results.forEach(result -> searchBlobs.add(buildSearchBlob(result)));
+    // Publication (annotator refresh) is owned by the service; this panel only paints.
+    VulnerabilityScannerService.ScanSummary summary =
+        VulnerabilityScannerService.ScanSummary.of(results);
 
-    long vulnerableCount = results.stream().filter(r -> r.vulnerable()).count();
-    results.forEach(
-        result -> {
-          String highestSev =
-              result.vulnerable()
-                  ? severityAnalyzer.getHighestSeverity(result.vulnerabilities())
-                  : SeverityAnalyzer.SAFE;
-          String fixedVer =
-              result.vulnerable()
-                  ? FixedVersionResolver.recommendUpgrade(
-                          result.vulnerabilities(), result.pkg().name(), result.pkg().version())
-                      .orElse(UNKNOWN)
-                  : "";
-          tableModel.addRow(
-              new Object[] {
-                highestSev,
-                result.pkg().name(),
-                result.pkg().version(),
-                fixedVer,
-                result.vulnerabilities().size()
-              });
-        });
+    // Bulk insert: one table event (and one sorter pass) per scan, not per row.
+    List<Object[]> rows =
+        results.stream()
+            .map(
+                result -> {
+                  String highestSev =
+                      result.vulnerable()
+                          ? SeverityAnalyzer.getHighestSeverity(result.vulnerabilities())
+                          : SeverityAnalyzer.SAFE;
+                  String fixedVer =
+                      result.vulnerable()
+                          ? FixedVersionResolver.recommendUpgrade(
+                                  result.vulnerabilities(),
+                                  result.pkg().name(),
+                                  result.pkg().version())
+                              .orElse(UNKNOWN)
+                          : "";
+                  return new Object[] {
+                    highestSev,
+                    result.pkg().name(),
+                    result.pkg().version(),
+                    fixedVer,
+                    result.vulnerabilities().size()
+                  };
+                })
+            .toList();
+    insertRows(rows);
 
     if (!results.isEmpty()) {
       cardLayout.show(mainPanel, "RESULTS");
-      statusLabel.setText(
-          vulnerableCount + " vulnerable of " + results.size() + " dependencies scanned");
-      if (vulnerableCount > 0) {
+      ScanUiPhase.RESULTS.apply(
+          this,
+          summary.vulnerable() + " vulnerable of " + summary.scanned() + " dependencies scanned",
+          true);
+      if (summary.vulnerable() > 0) {
         VulnSpotterNotifications.notifyWarning(
             project,
             "VulnSpotter found vulnerabilities",
-            vulnerableCount
+            summary.vulnerable()
                 + " vulnerable dependenc"
-                + (vulnerableCount == 1 ? "y" : "ies")
+                + (summary.vulnerable() == 1 ? "y" : "ies")
                 + " of "
-                + results.size()
+                + summary.scanned()
                 + " scanned. Open the VulnSpotter tool window for remediation advice.");
       }
     } else {
-      statusLabel.setText("No dependencies found — make sure the project is synced");
+      ScanUiPhase.NO_DEPS.apply(
+          this, "No dependencies found — make sure the project is synced", false);
     }
 
-    scanButton.setEnabled(true);
-    cancelButton.setVisible(false);
-    exportButton.setEnabled(!results.isEmpty());
-    progressBar.setVisible(false);
     applyFilters();
+  }
+
+  /** Appends the rows with a single table event. */
+  @SuppressWarnings({"unchecked", "rawtypes"})
+  private void insertRows(List<Object[]> rows) {
+    Vector<Vector> dataVector = tableModel.getDataVector();
+    int firstRow = dataVector.size();
+    for (Object[] cells : rows) {
+      Vector<Object> row = new Vector<>(Arrays.asList(cells));
+      dataVector.add(row);
+    }
+    if (!rows.isEmpty()) {
+      tableModel.fireTableRowsInserted(firstRow, dataVector.size() - 1);
+    }
   }
 
   private void onScanFailed(Throwable ex) {
     activeScan = null;
-    scanButton.setEnabled(true);
-    cancelButton.setVisible(false);
-    exportButton.setEnabled(false);
-    progressBar.setVisible(false);
 
     Throwable cause =
         ex instanceof CompletionException && ex.getCause() != null ? ex.getCause() : ex;
     if (cause instanceof CancellationException _) {
-      statusLabel.setText("Scan cancelled");
+      ScanUiPhase.CANCELLED.apply(this, "Scan cancelled", false);
       return;
     }
     String message =
@@ -710,7 +783,7 @@ public final class VulnSpotterToolWindow implements Disposable {
           default ->
               cause.getMessage() != null ? cause.getMessage() : cause.getClass().getSimpleName();
         };
-    statusLabel.setText("Scan failed: " + message);
+    ScanUiPhase.FAILED.apply(this, "Scan failed: " + message, false);
     VulnSpotterNotifications.notifyError(
         project,
         "VulnSpotter scan failed",
@@ -835,13 +908,6 @@ public final class VulnSpotterToolWindow implements Disposable {
     loadDetailsHtml(generateHtml(sb.toString()));
   }
 
-  private String appendEscapedWithLineBreaks(String value) {
-    if (value == null) {
-      return "";
-    }
-    return HtmlEscaper.escape(value).replace("\n", "<br/>");
-  }
-
   private void appendHeader(StringBuilder sb, VulnerabilityScannerService.ScanResult result) {
     sb.append("<div class='header'>");
     sb.append("<h1>").append(HtmlEscaper.escape(result.pkg().name())).append("</h1>");
@@ -876,22 +942,21 @@ public final class VulnSpotterToolWindow implements Disposable {
     Set<List<String>> chains = result.pkg().dependencyChains();
     Set<String> roots = new HashSet<>();
     boolean isDirect = isDirectDependency(chains, roots);
-    boolean hasFix = recommended != null;
-    String fixedVerStr = hasFix ? recommended : UNKNOWN;
+    String fixedVerStr = recommended != null ? recommended : UNKNOWN;
 
     sb.append("<div class='dep-classification'>")
         .append(HtmlEscaper.escape(classificationLabel(isDirect, roots)))
         .append(DIV_CLOSE);
 
     if (isDirect) {
-      appendDirectRemediation(sb, result, fixedVerStr, hasFix);
+      appendDirectRemediation(sb, result, fixedVerStr);
     }
 
     if (!roots.isEmpty()) {
       if (isDirect) {
         sb.append("<hr style='border: 0; border-top: 1px solid #ccc; margin: 8px 0;'/>");
       }
-      appendTransitiveRemediation(sb, result, fixedVerStr, hasFix, roots);
+      appendTransitiveRemediation(sb, result, fixedVerStr, roots);
     }
     sb.append(DIV_CLOSE);
   }
@@ -914,11 +979,8 @@ public final class VulnSpotterToolWindow implements Disposable {
   }
 
   private void appendDirectRemediation(
-      StringBuilder sb,
-      VulnerabilityScannerService.ScanResult result,
-      String fixedVerStr,
-      boolean hasFix) {
-    if (hasFix) {
+      StringBuilder sb, VulnerabilityScannerService.ScanResult result, String fixedVerStr) {
+    if (!UNKNOWN.equals(fixedVerStr)) {
       sb.append("<p>Upgrade <b>")
           .append(HtmlEscaper.escape(result.pkg().name()))
           .append("</b> to version <b>")
@@ -938,9 +1000,8 @@ public final class VulnSpotterToolWindow implements Disposable {
       StringBuilder sb,
       VulnerabilityScannerService.ScanResult result,
       String fixedVerStr,
-      boolean hasFix,
       Set<String> roots) {
-    if (hasFix) {
+    if (!UNKNOWN.equals(fixedVerStr)) {
       sb.append("<p>For transitive dependencies, upgrade:</p>");
       sb.append("<ul>");
       roots.forEach(
@@ -972,88 +1033,12 @@ public final class VulnSpotterToolWindow implements Disposable {
         .vulnerabilities()
         .forEach(
             vuln -> {
-              String sev = severityAnalyzer.getSeverity(vuln);
-              Double score = severityAnalyzer.getBaseScore(vuln);
-              String fixedV =
-                  FixedVersionResolver.resolve(vuln, result.pkg().name(), result.pkg().version());
-
               sb.append("<div class='card'>");
-              sb.append("<div class='card-header'>");
-              sb.append("<span class='badge ")
-                  .append(HtmlEscaper.escape(sev.toLowerCase(Locale.ROOT)))
-                  .append("'>")
-                  .append(HtmlEscaper.escape(sev))
-                  .append("</span>");
-              if (score != null) {
-                sb.append("<span class='cvss-score'>CVSS ")
-                    .append(String.format(Locale.ROOT, "%.1f", score))
-                    .append("</span>");
-              }
-              sb.append("<span class='vuln-id'><a href='https://osv.dev/vulnerability/")
-                  .append(HtmlEscaper.escape(vuln.id()))
-                  .append("'>")
-                  .append(HtmlEscaper.escape(vuln.id()))
-                  .append("</a></span>");
-              appendCveAliases(sb, vuln);
-              sb.append(DIV_CLOSE);
-              sb.append("<div class='vuln-summary'>")
-                  .append(
-                      vuln.summary() != null ? HtmlEscaper.escape(vuln.summary()) : "No summary")
-                  .append(DIV_CLOSE);
-              List<String> ranges = FixedVersionResolver.affectedRanges(vuln, result.pkg().name());
-              if (!ranges.isEmpty()) {
-                sb.append("<div class='affected-range'>Affected: ")
-                    .append(HtmlEscaper.escape(String.join(", ", ranges)))
-                    .append(DIV_CLOSE);
-              }
-              sb.append("<div class='fixed-box'>Fixed in: <span class='fixed-ver'>")
-                  .append(HtmlEscaper.escape(fixedV))
-                  .append("</span>");
-              if (!UNKNOWN.equals(fixedV)) {
-                sb.append(" <button class='copy-btn' onclick=\"copyToClipboard('")
-                    .append(HtmlEscaper.escape(HtmlEscaper.escapeJsSingleQuoted(fixedV)))
-                    .append("')\">Copy</button>");
-              }
-              sb.append(DIV_CLOSE);
-              if (vuln.details() != null && !vuln.details().isBlank()) {
-                sb.append("<div class='details'>")
-                    .append(appendEscapedWithLineBreaks(vuln.details()))
-                    .append(DIV_CLOSE);
-              }
-
-              if (vuln.references() != null && !vuln.references().isEmpty()) {
-                sb.append("<div class='references-section'>");
-                sb.append("<div class='references-title'>References</div>");
-                vuln.references().stream()
-                    .filter(ref -> isSafeUrl(ref.url()))
-                    .forEach(
-                        ref -> {
-                          String url = ref.url();
-                          sb.append("<div class='reference-item'><a href='")
-                              .append(HtmlEscaper.escape(url))
-                              .append("'>")
-                              .append(HtmlEscaper.escape(url))
-                              .append("</a></div>");
-                        });
-                sb.append(DIV_CLOSE);
-              }
+              sb.append(
+                  VulnerabilityCardComposer.vulnCardInner(
+                      vuln, result.pkg().name(), result.pkg().version(), true));
               sb.append(DIV_CLOSE);
             });
-  }
-
-  private void appendCveAliases(StringBuilder sb, OsvVulnerability vuln) {
-    if (vuln.aliases() == null) {
-      return;
-    }
-    vuln.aliases().stream()
-        .filter(a -> a != null && a.toUpperCase(Locale.ROOT).startsWith("CVE-"))
-        .forEach(
-            cve ->
-                sb.append("<span class='cve-alias'><a href='https://nvd.nist.gov/vuln/detail/")
-                    .append(HtmlEscaper.escape(cve))
-                    .append("'>")
-                    .append(HtmlEscaper.escape(cve))
-                    .append("</a></span>"));
   }
 
   private void appendDependencyChains(
@@ -1102,103 +1087,58 @@ public final class VulnSpotterToolWindow implements Disposable {
     }
   }
 
+  /** Rebuilds only the body: the ~10 KB CSS/theme shell is built once per theme and reused. */
   private String generateHtml(String bodyContent) {
     boolean isDark = ColorUtil.isDark(UIUtil.getPanelBackground());
-    HtmlTheme theme =
-        new HtmlTheme(
-            isDark ? "#1e1e1e" : "#ffffff",
-            isDark ? "#d4d4d4" : "#333333",
-            isDark ? "#252526" : "#ffffff",
-            isDark ? "#454545" : "#e0e0e0");
-
-    String headingColor = isDark ? "#ffffff" : "#000000";
-
-    return "<html><head><style>"
-        + "body { font-family: 'Inter', -apple-system, sans-serif; padding: 24px; background: "
-        + theme.bgColor()
-        + "; color: "
-        + theme.textColor()
-        + "; line-height: 1.6; }"
-        + "h1 { font-size: 24px; font-weight: 700; margin: 0; color: "
-        + headingColor
-        + "; }"
-        + ".version { color: #888; margin-top: 4px; margin-bottom: 24px; font-size: 14px; }"
-        + ".section-title { font-weight: 700; margin-top: 24px; margin-bottom: 12px; font-size: 16px; border-bottom: 1px solid "
-        + theme.borderColor()
-        + "; padding-bottom: 8px; }"
-        + ".safe-banner { background: rgba(67, 160, 71, 0.1); color: #43a047; padding: 16px; border-radius: 8px; font-weight: 600; margin: 24px 0; border: 1px solid #43a047; }"
-        + ".path-header { font-weight: 600; margin-top: 16px; margin-bottom: 8px; color: #2196f3; font-size: 14px; }"
-        + ".snyk-chain { font-family: 'JetBrains Mono', monospace; background: "
-        + (isDark ? "#2d2d2d" : "#f5f5f5")
-        + "; padding: 12px; border-radius: 6px; margin: 8px 0; font-size: 13px; }"
-        + ".chain-item { padding: 4px 0; display: flex; align-items: center; }"
-        + ".connector { color: #888; margin-right: 8px; }"
-        + ".icon { margin-right: 6px; }"
-        + ".target { color: #e53935; font-weight: 700; }"
-        + ".remediation-box { background: "
-        + (isDark ? "#1a2a3a" : "#e3f2fd")
-        + "; border: 1px solid #2196f3; border-radius: 8px; padding: 16px; margin: 16px 0; }"
-        + ".remediation-title { font-weight: 800; color: #2196f3; text-transform: uppercase; font-size: 12px; margin-bottom: 8px; letter-spacing: 0.5px; }"
-        + ".dep-classification { font-size: 12px; font-weight: 600; color: "
-        + (isDark ? "#9db8d8" : "#1565c0")
-        + "; margin-bottom: 10px; }"
-        + ".ecosystem-tag { display: inline-block; background: "
-        + (isDark ? "#333" : "#eee")
-        + "; color: "
-        + (isDark ? "#ccc" : "#555")
-        + "; padding: 1px 6px; border-radius: 4px; font-size: 11px; font-weight: 600; margin-right: 4px; }"
-        + ".affected-range { font-size: 12px; color: #888; margin: 8px 0; font-family: 'JetBrains Mono', monospace; }"
-        + ".card { background: "
-        + theme.cardBg()
-        + "; border: 1px solid "
-        + theme.borderColor()
-        + "; border-radius: 12px; padding: 20px; margin-bottom: 20px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); }"
-        + ".card-header { display: flex; align-items: center; margin-bottom: 12px; gap: 10px; flex-wrap: wrap; }"
-        + ".badge { padding: 4px 10px; border-radius: 20px; color: white; font-size: 11px; font-weight: 700; text-transform: uppercase; }"
-        + ".cvss-score { font-size: 12px; font-weight: 600; color: #888; background: "
-        + (isDark ? "#333" : "#eee")
-        + "; padding: 2px 8px; border-radius: 4px; }"
-        + ".critical { background: #d32f2f; } .high { background: #f57c00; } .medium { background: #fbc02d; color: #333; } .low { background: #43a047; } .unknown { background: #546e7a; }"
-        + ".vuln-id { font-weight: 600; font-size: 14px; }"
-        + ".cve-alias { font-size: 12px; margin-left: 4px; }"
-        + ".vuln-summary { font-size: 16px; font-weight: 600; margin-bottom: 12px; color: "
-        + (isDark ? "#eee" : "#222")
-        + "; }"
-        + ".fixed-box { background: rgba(67, 160, 71, 0.1); color: #2e7d32; padding: 8px 12px; border-radius: 6px; font-weight: 600; display: inline-flex; align-items: center; gap: 8px; margin: 12px 0; border: 1px solid rgba(67, 160, 71, 0.2); }"
-        + ".copy-btn { cursor: pointer; background: #2196f3; color: white; border: none; padding: 2px 8px; border-radius: 4px; font-size: 10px; transition: background 0.2s; }"
-        + ".copy-btn:hover { background: #1976d2; }"
-        + ".details { font-size: 13px; color: #888; margin-top: 12px; max-height: 150px; overflow-y: auto; background: "
-        + (isDark ? "#1e1e1e" : "#fcfcfc")
-        + "; padding: 10px; border-radius: 4px; }"
-        + ".references-section { margin-top: 20px; border-top: 1px solid "
-        + theme.borderColor()
-        + "; padding-top: 16px; }"
-        + ".references-title { font-weight: 800; color: #888; text-transform: uppercase; font-size: 11px; margin-bottom: 10px; }"
-        + ".reference-item { font-size: 12px; margin-bottom: 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }"
-        + "a { color: #2196f3; text-decoration: none; font-weight: 500; } a:hover { text-decoration: underline; }"
-        + "code { font-family: 'JetBrains Mono', monospace; background: rgba(0,0,0,0.05); padding: 2px 4px; border-radius: 3px; }"
-        + "</style>"
-        + "<script>"
-        + COPY_TO_CLIPBOARD_JS
-        + "</script>"
-        + "</head><body>"
+    return htmlShells.computeIfAbsent(isDark, VulnSpotterToolWindow::buildHtmlShell)
         + bodyContent
         + "</body></html>";
   }
 
+  /** Precomputed once per severity (and per theme, via the cache above) instead of per paint. */
   private Icon getSeverityIcon(String s) {
-    return switch (s) {
-      case SeverityAnalyzer.CRITICAL -> IconUtil.colorize(AllIcons.General.Error, COLOR_CRITICAL);
-      case SeverityAnalyzer.HIGH -> IconUtil.colorize(AllIcons.General.Warning, COLOR_HIGH);
-      case SeverityAnalyzer.MEDIUM -> IconUtil.colorize(AllIcons.General.Note, COLOR_MEDIUM);
-      case SeverityAnalyzer.LOW -> IconUtil.colorize(AllIcons.General.Information, COLOR_LOW);
-      case SeverityAnalyzer.UNKNOWN -> AllIcons.General.QuestionDialog;
-      default -> IconUtil.colorize(AllIcons.General.InspectionsOK, COLOR_LOW);
-    };
+    return severityIcons.computeIfAbsent(s, VulnSpotterToolWindow::resolveSeverityIcon);
   }
 
   public JComponent getContent() {
     return content;
+  }
+
+  /**
+   * Scan-lifecycle phases of the panel. One place renders each phase so a new state cannot be added
+   * half-way: today three transitions hand-copy the same widget flips. Texts stay outside — the
+   * transition callers pass the exact status string, so user-visible wording is unchanged.
+   */
+  private enum ScanUiPhase {
+    SCANNING,
+    RESULTS,
+    NO_DEPS,
+    FAILED,
+    CANCELLED;
+
+    void apply(VulnSpotterToolWindow tw, String statusText, boolean exportEnabled) {
+      switch (this) {
+        case SCANNING -> {
+          tw.scanButton.setEnabled(false);
+          tw.exportButton.setEnabled(false);
+          tw.cancelButton.setVisible(true);
+          tw.statusLabel.setText(statusText);
+          tw.progressBar.setVisible(true);
+          // A new scan is a fresh view: stale results, blobs and query text must not linger.
+          tw.tableModel.setRowCount(0);
+          tw.scanResults.clear();
+          tw.searchBlobs.clear();
+          tw.searchField.setText("");
+        }
+        case RESULTS, NO_DEPS, FAILED, CANCELLED -> {
+          tw.scanButton.setEnabled(true);
+          tw.cancelButton.setVisible(false);
+          tw.exportButton.setEnabled(exportEnabled);
+          tw.progressBar.setVisible(false);
+          tw.statusLabel.setText(statusText);
+        }
+      }
+    }
   }
 
   private record HtmlTheme(String bgColor, String textColor, String cardBg, String borderColor) {}
@@ -1213,8 +1153,9 @@ public final class VulnSpotterToolWindow implements Disposable {
       super.getTableCellRendererComponent(table, value, isSelected, hasFocus, row, column);
       String severity = value == null ? "" : value.toString();
       setIcon(getSeverityIcon(severity));
-      setText(displayName(severity));
-      setToolTipText(displayName(severity));
+      String display = displayName(severity);
+      setText(display);
+      setToolTipText(display);
       return this;
     }
 

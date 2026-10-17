@@ -21,6 +21,7 @@ import javax.swing.event.HyperlinkEvent;
 final class SwingDetailsPanel implements DetailsPanel {
 
   private final JEditorPane pane = new JEditorPane();
+  private final JBScrollPane scrollPane = new JBScrollPane(pane);
 
   SwingDetailsPanel() {
     pane.setContentType("text/html");
@@ -35,7 +36,7 @@ final class SwingDetailsPanel implements DetailsPanel {
 
   @Override
   public JComponent getComponent() {
-    return new JBScrollPane(pane);
+    return scrollPane;
   }
 
   @Override

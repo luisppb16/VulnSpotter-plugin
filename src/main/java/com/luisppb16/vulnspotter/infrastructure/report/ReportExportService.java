@@ -11,20 +11,19 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.luisppb16.vulnspotter.application.service.VulnerabilityScannerService;
+import com.luisppb16.vulnspotter.domain.model.Ecosystem;
 import com.luisppb16.vulnspotter.domain.model.OsvVulnerability;
 import com.luisppb16.vulnspotter.domain.service.FixedVersionResolver;
 import com.luisppb16.vulnspotter.domain.service.SeverityAnalyzer;
+import com.luisppb16.vulnspotter.infrastructure.osv.ProjectConstants;
 import com.openhtmltopdf.pdfboxout.PdfRendererBuilder;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.time.OffsetDateTime;
-import java.time.format.DateTimeFormatter;
 import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Locale;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -32,11 +31,8 @@ import java.util.stream.Collectors;
 public final class ReportExportService {
 
   private static final ObjectMapper MAPPER = new ObjectMapper();
-  private static final SeverityAnalyzer SEVERITY_ANALYZER = new SeverityAnalyzer();
   private static final String TOOL_INFO_URI = "https://github.com/luisppb16";
   private static final String TOOL_VERSION = VulnerabilityReportBuilder.TOOL_VERSION;
-  private static final String GENERATED_AT =
-      OffsetDateTime.now().format(DateTimeFormatter.ISO_OFFSET_DATE_TIME);
 
   private ReportExportService() {}
 
@@ -55,7 +51,7 @@ public final class ReportExportService {
   }
 
   /** Generic Jackson serializer used internally (e.g. for the SARIF document). */
-  static void writeJson(Object value, Path outputPath) throws IOException {
+  private static void writeJson(Object value, Path outputPath) throws IOException {
     String json = MAPPER.writerWithDefaultPrettyPrinter().writeValueAsString(value);
     Files.writeString(outputPath, json, StandardCharsets.UTF_8);
   }
@@ -70,13 +66,8 @@ public final class ReportExportService {
       throws IOException {
     List<VulnerabilityScannerService.ScanResult> results =
         scanResults == null ? List.of() : scanResults;
-    long vulnerableDeps =
-        results.stream().filter(VulnerabilityScannerService.ScanResult::vulnerable).count();
-    long totalVulns =
-        results.stream()
-            .filter(VulnerabilityScannerService.ScanResult::vulnerable)
-            .mapToLong(r -> r.vulnerabilities().size())
-            .sum();
+    VulnerabilityScannerService.ScanSummary rollUp =
+        VulnerabilityScannerService.ScanSummary.of(results);
 
     ObjectNode root = MAPPER.createObjectNode();
     ObjectNode tool = root.putObject("tool");
@@ -85,12 +76,12 @@ public final class ReportExportService {
     tool.put("informationUri", TOOL_INFO_URI);
     tool.put("dataSource", "OSV.dev");
     root.put("project", projectName == null ? "" : projectName);
-    root.put("generatedAt", GENERATED_AT);
+    root.put("generatedAt", VulnerabilityReportBuilder.nowTimestamp());
 
     ObjectNode summary = root.putObject("summary");
-    summary.put("totalDependencies", results.size());
-    summary.put("vulnerableDependencies", vulnerableDeps);
-    summary.put("totalVulnerabilities", totalVulns);
+    summary.put("totalDependencies", rollUp.scanned());
+    summary.put("vulnerableDependencies", rollUp.vulnerable());
+    summary.put("totalVulnerabilities", rollUp.totalVulnerabilities());
 
     ArrayNode resultsArr = root.putArray("results");
     for (VulnerabilityScannerService.ScanResult sr : results) {
@@ -110,9 +101,9 @@ public final class ReportExportService {
           ArrayNode aliases = v.putArray("aliases");
           vuln.aliases().forEach(aliases::add);
         }
-        String severity = SEVERITY_ANALYZER.getSeverity(vuln);
+        String severity = SeverityAnalyzer.getSeverity(vuln);
         v.put("severity", severity);
-        Double score = SEVERITY_ANALYZER.getBaseScore(vuln);
+        Double score = SeverityAnalyzer.getBaseScore(vuln);
         if (score != null) {
           v.put("cvssScore", score);
         }
@@ -171,13 +162,13 @@ public final class ReportExportService {
         continue;
       }
       for (OsvVulnerability vuln : sr.vulnerabilities()) {
-        String severity = SEVERITY_ANALYZER.getSeverity(vuln);
-        Double score = SEVERITY_ANALYZER.getBaseScore(vuln);
+        String severity = SeverityAnalyzer.getSeverity(vuln);
+        Double score = SeverityAnalyzer.getBaseScore(vuln);
         String cveAliases =
             vuln.aliases() == null
                 ? ""
                 : vuln.aliases().stream()
-                    .filter(a -> a != null && a.toUpperCase(Locale.ROOT).startsWith("CVE-"))
+                    .filter(OsvVulnerability::isCveAlias)
                     .collect(Collectors.joining(" "));
         String ranges =
             String.join("; ", FixedVersionResolver.affectedRanges(vuln, sr.pkg().name()));
@@ -193,7 +184,7 @@ public final class ReportExportService {
             .append(',')
             .append(csvField(severity))
             .append(',')
-            .append(score == null ? "" : String.format(Locale.ROOT, "%.1f", score))
+            .append(score == null ? "" : SeverityAnalyzer.formatScore(score))
             .append(',')
             .append(csvField(ranges))
             .append(',')
@@ -248,7 +239,7 @@ public final class ReportExportService {
 
     ObjectNode invocations = run.putArray("invocations").addObject();
     invocations.put("executionSuccessful", true);
-    invocations.put("endTimeUtc", GENERATED_AT);
+    invocations.put("endTimeUtc", VulnerabilityReportBuilder.nowTimestamp());
 
     Set<String> ruleIds = new LinkedHashSet<>();
     ArrayNode results = run.putArray("results");
@@ -262,7 +253,7 @@ public final class ReportExportService {
           if (vuln.summary() != null && !vuln.summary().isBlank()) {
             rule.putObject("shortDescription").put("text", vuln.summary());
           }
-          rule.put("helpUri", "https://osv.dev/vulnerability/" + ruleId);
+          rule.put("helpUri", ProjectConstants.OSV_WEB_VULN_URL + ruleId);
         }
 
         ObjectNode result = results.addObject();
@@ -273,12 +264,12 @@ public final class ReportExportService {
             vuln.summary() != null
                 ? sr.pkg().name() + ": " + vuln.summary()
                 : sr.pkg().name() + " has vulnerability " + ruleId);
-        result.put("level", sarifLevel(SEVERITY_ANALYZER.getSeverity(vuln)));
+        result.put("level", sarifLevel(SeverityAnalyzer.getSeverity(vuln)));
 
         ObjectNode location = result.putArray("locations").addObject();
         ObjectNode physicalLocation = location.putObject("physicalLocation");
         ObjectNode artifactLocation = physicalLocation.putObject("artifactLocation");
-        artifactLocation.put("uri", manifestFileFor(sr.pkg().ecosystem()));
+        artifactLocation.put("uri", Ecosystem.manifestFile(sr.pkg().ecosystem()));
         artifactLocation.put("uriBaseId", "SRCROOT");
         ObjectNode region = physicalLocation.putObject("region");
         region.put("startLine", 1);
@@ -309,24 +300,19 @@ public final class ReportExportService {
       throws IOException {
     List<VulnerabilityScannerService.ScanResult> results =
         scanResults == null ? List.of() : scanResults;
-    long vulnerableDeps =
-        results.stream().filter(VulnerabilityScannerService.ScanResult::vulnerable).count();
-    long totalVulns =
-        results.stream()
-            .filter(VulnerabilityScannerService.ScanResult::vulnerable)
-            .mapToLong(r -> r.vulnerabilities().size())
-            .sum();
+    VulnerabilityScannerService.ScanSummary rollUp =
+        VulnerabilityScannerService.ScanSummary.of(results);
 
     StringBuilder md = new StringBuilder();
     md.append("# VulnSpotter Vulnerability Report\n\n");
     md.append("- **Project:** ").append(projectName == null ? "" : projectName).append('\n');
-    md.append("- **Generated:** ").append(GENERATED_AT).append('\n');
+    md.append("- **Generated:** ").append(VulnerabilityReportBuilder.nowTimestamp()).append('\n');
     md.append("- **Tool:** VulnSpotter v").append(TOOL_VERSION).append(" (OSV.dev)\n");
-    md.append("- **Dependencies scanned:** ").append(results.size()).append('\n');
-    md.append("- **Vulnerable dependencies:** ").append(vulnerableDeps).append('\n');
-    md.append("- **Vulnerabilities found:** ").append(totalVulns).append("\n\n");
+    md.append("- **Dependencies scanned:** ").append(rollUp.scanned()).append('\n');
+    md.append("- **Vulnerable dependencies:** ").append(rollUp.vulnerable()).append('\n');
+    md.append("- **Vulnerabilities found:** ").append(rollUp.totalVulnerabilities()).append("\n\n");
 
-    if (vulnerableDeps == 0) {
+    if (rollUp.vulnerable() == 0) {
       md.append("No known vulnerabilities found in scanned dependencies.\n");
       Files.writeString(outputPath, md.toString(), StandardCharsets.UTF_8);
       return;
@@ -347,16 +333,17 @@ public final class ReportExportService {
           .append(")\n");
       md.append("Recommended fix: **").append(fix).append("**\n\n");
       for (OsvVulnerability vuln : sr.vulnerabilities()) {
-        String severity = SEVERITY_ANALYZER.getSeverity(vuln);
-        Double score = SEVERITY_ANALYZER.getBaseScore(vuln);
+        String severity = SeverityAnalyzer.getSeverity(vuln);
+        Double score = SeverityAnalyzer.getBaseScore(vuln);
         md.append("- **[")
             .append(vuln.id())
-            .append("](https://osv.dev/vulnerability/")
+            .append("](")
+            .append(ProjectConstants.OSV_WEB_VULN_URL)
             .append(vuln.id())
             .append(")** — ")
             .append(severity);
         if (score != null) {
-          md.append(" (CVSS ").append(String.format(Locale.ROOT, "%.1f", score)).append(")");
+          md.append(" (CVSS ").append(SeverityAnalyzer.formatScore(score)).append(")");
         }
         List<String> ranges = FixedVersionResolver.affectedRanges(vuln, sr.pkg().name());
         if (!ranges.isEmpty()) {
@@ -373,22 +360,11 @@ public final class ReportExportService {
   }
 
   private static String sarifLevel(String severity) {
-    return switch (severity == null ? "" : severity) {
-      case SeverityAnalyzer.CRITICAL, SeverityAnalyzer.HIGH -> "error";
-      case SeverityAnalyzer.MEDIUM -> "warning";
-      case SeverityAnalyzer.LOW -> "note";
+    return switch (SeverityAnalyzer.severityToEscalation(severity)) {
+      case 0 -> "error";
+      case 1 -> "warning";
+      case 2 -> "note";
       default -> "warning";
-    };
-  }
-
-  /** Best-effort manifest file path so SARIF consumers have a real artifact to anchor to. */
-  private static String manifestFileFor(String ecosystem) {
-    return switch (ecosystem == null ? "" : ecosystem) {
-      case "Maven" -> "pom.xml";
-      case "npm" -> "package.json";
-      case "PyPI" -> "requirements.txt";
-      case "Go" -> "go.mod";
-      default -> "dependencies";
     };
   }
 }

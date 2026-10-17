@@ -7,12 +7,11 @@
 
 package com.luisppb16.vulnspotter.infrastructure.sync;
 
-import static org.mockito.ArgumentMatchers.anyList;
-import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.mockStatic;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -21,6 +20,7 @@ import com.luisppb16.vulnspotter.application.service.VulnerabilityScannerService
 import com.luisppb16.vulnspotter.settings.VulnSpotterSettings;
 import java.util.Collections;
 import java.util.List;
+import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
 import org.jetbrains.idea.maven.project.MavenProject;
 import org.junit.jupiter.api.AfterEach;
@@ -56,8 +56,6 @@ class MavenSyncListenerTest {
 
     scannerStatic.when(() -> VulnerabilityScannerService.getInstance(project)).thenReturn(scanner);
     settingsStatic.when(VulnSpotterSettings::getInstance).thenReturn(settings);
-    // A listener test must never reach the real UI plumbing.
-    doNothing().when(scanner).updateResults(anyList());
 
     listener = new MavenSyncListener(project);
   }
@@ -97,6 +95,23 @@ class MavenSyncListenerTest {
     InOrder inOrder = inOrder(scanner);
     inOrder.verify(scanner).invalidateCache();
     inOrder.verify(scanner).scanDependencies();
+  }
+
+  @Test
+  @DisplayName("reruns_the_auto_scan_once_when_the_borrowed_scan_does_not_complete")
+  void rerunsTheAutoScanOnceWhenTheBorrowedScanDoesNotComplete() {
+    // Given: the scan the trigger borrowed completes exceptionally — a UI cancel or the tool
+    // window's timeout kills the shared future without this sync having been served.
+    when(settings.isAutoScanOnSync()).thenReturn(true);
+    when(scanner.scanDependencies())
+        .thenReturn(CompletableFuture.failedFuture(new CancellationException("cancelled")))
+        .thenReturn(CompletableFuture.failedFuture(new CancellationException("cancelled")));
+
+    // When
+    listener.importFinished(List.of(mock(MavenProject.class)), List.of());
+
+    // Then: exactly one retry ran; the retry never retries again (no loop).
+    verify(scanner, times(2)).scanDependencies();
   }
 
   @Test

@@ -15,9 +15,10 @@ import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiFile;
 import com.intellij.psi.xml.XmlTag;
 import com.luisppb16.vulnspotter.application.service.VulnerabilityScannerService;
+import com.luisppb16.vulnspotter.domain.model.PackageKey;
 import com.luisppb16.vulnspotter.domain.service.FixedVersionResolver;
 import com.luisppb16.vulnspotter.domain.service.SeverityAnalyzer;
-import com.luisppb16.vulnspotter.infrastructure.parser.DependencyParser;
+import com.luisppb16.vulnspotter.infrastructure.parser.Manifests;
 import java.util.Locale;
 import org.jetbrains.annotations.NotNull;
 
@@ -32,8 +33,6 @@ import org.jetbrains.annotations.NotNull;
  * first.
  */
 public class DependencyAnnotator implements Annotator {
-
-  private static final SeverityAnalyzer SEVERITY_ANALYZER = new SeverityAnalyzer();
 
   private static String stripQuotes(String text) {
     if (text.length() >= 6 && text.startsWith("'''") && text.endsWith("'''")) {
@@ -52,10 +51,10 @@ public class DependencyAnnotator implements Annotator {
   }
 
   private static HighlightSeverity severityFor(String highest) {
-    return switch (highest == null ? "" : highest) {
-      case SeverityAnalyzer.CRITICAL, SeverityAnalyzer.HIGH -> HighlightSeverity.ERROR;
-      case SeverityAnalyzer.MEDIUM -> HighlightSeverity.WARNING;
-      case SeverityAnalyzer.LOW -> HighlightSeverity.INFORMATION;
+    return switch (SeverityAnalyzer.severityToEscalation(highest)) {
+      case 0 -> HighlightSeverity.ERROR;
+      case 1 -> HighlightSeverity.WARNING;
+      case 2 -> HighlightSeverity.INFORMATION;
       default -> HighlightSeverity.WEAK_WARNING;
     };
   }
@@ -67,9 +66,8 @@ public class DependencyAnnotator implements Annotator {
       return;
     }
     String fileName = file.getName();
-    boolean isPom = "pom.xml".equals(fileName);
-    boolean isGradle = "build.gradle".equals(fileName);
-    if (!isPom && !isGradle) {
+    boolean isPom = Manifests.POM_XML.equals(fileName);
+    if (!Manifests.isSupported(fileName)) {
       return;
     }
 
@@ -81,15 +79,18 @@ public class DependencyAnnotator implements Annotator {
 
     if (isPom) {
       if (element instanceof XmlTag tag && "dependency".equals(tag.getName())) {
-        annotatePomDependency(tag, scanner, holder);
+        annotatePomDependency(tag, fileName, scanner, holder);
       }
     } else {
-      annotateGradleLeaf(element, scanner, holder);
+      annotateGradleLeaf(element, fileName, scanner, holder);
     }
   }
 
   private void annotatePomDependency(
-      XmlTag dependencyTag, VulnerabilityScannerService scanner, AnnotationHolder holder) {
+      XmlTag dependencyTag,
+      String fileName,
+      VulnerabilityScannerService scanner,
+      AnnotationHolder holder) {
     XmlTag groupTag = dependencyTag.findFirstSubTag("groupId");
     XmlTag artifactTag = dependencyTag.findFirstSubTag("artifactId");
     if (groupTag == null || artifactTag == null) {
@@ -108,21 +109,23 @@ public class DependencyAnnotator implements Annotator {
       // dep).
       resolvedVersion = versionText;
     } else {
-      // Property-based (${...}) or inherited versions: the scan recorded the version Maven
-      // actually resolved for this pom, so look it up in this pom's dependency tree. Without a
-      // resolved version no scan row can be ruled in or out — staying silent is the only choice
-      // that cannot produce false positives (a name-only fallback highlighted any vulnerable
-      // entry whose group:artifact matched, even at an unrelated old version).
+      // Property-based (${...}) or inherited versions: the scanner's resolved-version snapshot is
+      // authoritative for poms the last parse covered (a coordinate it does not answer was pruned
+      // away there, so walking again could not help); poms never scanned are walked by the
+      // service. Without a resolved version no scan row can be ruled in or out — staying silent
+      // is the only choice that cannot produce false positives (a name-only fallback highlighted
+      // any vulnerable entry whose group:artifact matched, even at an unrelated old version).
       resolvedVersion =
-          DependencyParser.findResolvedVersion(
-              dependencyTag.getProject(),
-              dependencyTag.getContainingFile().getVirtualFile(),
-              groupId,
-              artifactId);
+          scanner.resolvedVersion(
+              dependencyTag.getContainingFile().getVirtualFile(), groupId, artifactId);
+      if (resolvedVersion == null) {
+        return; // "Cannot be checked": never safe, only unmatched.
+      }
     }
 
     VulnerabilityScannerService.ScanResult result =
-        scanner.findVulnerableResult(name, resolvedVersion);
+        scanner.findVulnerableResult(
+            new PackageKey(name, resolvedVersion, Manifests.ecosystemOf(fileName)));
     if (result == null) {
       return;
     }
@@ -147,7 +150,10 @@ public class DependencyAnnotator implements Annotator {
    * leaf tokens include them.
    */
   private void annotateGradleLeaf(
-      PsiElement element, VulnerabilityScannerService scanner, AnnotationHolder holder) {
+      PsiElement element,
+      String fileName,
+      VulnerabilityScannerService scanner,
+      AnnotationHolder holder) {
     if (element.getFirstChild() != null) {
       return; // only leaf tokens
     }
@@ -166,7 +172,9 @@ public class DependencyAnnotator implements Annotator {
     String name = text.substring(0, lastColon);
     String version = text.substring(lastColon + 1);
 
-    VulnerabilityScannerService.ScanResult result = scanner.findVulnerableResult(name, version);
+    VulnerabilityScannerService.ScanResult result =
+        scanner.findVulnerableResult(
+            new PackageKey(name, version, Manifests.ecosystemOf(fileName)));
     if (result == null) {
       return;
     }
@@ -176,7 +184,7 @@ public class DependencyAnnotator implements Annotator {
   private void createAnnotation(
       AnnotationHolder holder, TextRange anchor, VulnerabilityScannerService.ScanResult result) {
     int count = result.vulnerabilities().size();
-    String highest = SEVERITY_ANALYZER.getHighestSeverity(result.vulnerabilities());
+    String highest = SeverityAnalyzer.getHighestSeverity(result.vulnerabilities());
     String fix =
         FixedVersionResolver.recommendUpgrade(
                 result.vulnerabilities(), result.pkg().name(), result.pkg().version())

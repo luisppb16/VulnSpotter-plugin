@@ -27,7 +27,9 @@ import com.intellij.openapi.roots.libraries.Library;
 import com.intellij.openapi.roots.libraries.LibraryTable;
 import com.intellij.openapi.roots.libraries.LibraryTablesRegistrar;
 import com.intellij.openapi.vfs.VirtualFile;
+import com.luisppb16.vulnspotter.domain.model.Ecosystem;
 import com.luisppb16.vulnspotter.domain.model.OsvPackage;
+import com.luisppb16.vulnspotter.domain.model.PackageKey;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -74,22 +76,22 @@ public final class DependencyParser {
   // Matches a package-lock v2/v3 key like "node_modules/foo" or
   // "node_modules/foo/node_modules/bar".
   private static final Pattern NPM_LOCK_KEY_PATTERN = Pattern.compile("^node_modules/(.+)$");
-  private static final String MAVEN_ECOSYSTEM = "Maven";
   private static final ObjectMapper MAPPER = new ObjectMapper();
 
   private DependencyParser() {
     throw new UnsupportedOperationException("Utility class");
   }
 
-  public static List<OsvPackage> parseDependencies(@NotNull Project project) {
+  public static ParseOutcome parseDependencies(@NotNull Project project) {
     List<OsvPackage> allPackages = new ArrayList<>();
+    Map<VirtualFile, Map<String, String>> resolvedVersions = new HashMap<>();
     boolean isManagedProject = false;
 
     // 1. Maven: Real tree support
     try {
       MavenProjectsManager mavenManager = MavenProjectsManager.getInstance(project);
       if (mavenManager != null && mavenManager.hasProjects()) {
-        allPackages.addAll(parseMavenDependencies(mavenManager));
+        parseMavenDependencies(mavenManager, allPackages, resolvedVersions);
         isManagedProject = true;
       }
     } catch (Exception e) {
@@ -169,7 +171,7 @@ public final class DependencyParser {
       LOG.warn("Failed to parse go.mod", e);
     }
 
-    return deduplicateAndSort(allPackages);
+    return new ParseOutcome(deduplicateAndSort(allPackages), resolvedVersions);
   }
 
   /**
@@ -226,7 +228,7 @@ public final class DependencyParser {
                 if (versionNode != null && !versionNode.isNull()) {
                   String version = versionNode.asText().trim();
                   if (!version.isEmpty() && !"undefined".equals(version)) {
-                    allPackages.add(new OsvPackage(name, "npm", version));
+                    allPackages.add(new OsvPackage(name, Ecosystem.NPM, version));
                   }
                 }
               });
@@ -248,7 +250,7 @@ public final class DependencyParser {
               if (versionNode != null && !versionNode.isNull()) {
                 String version = versionNode.asText().trim();
                 if (!version.isEmpty()) {
-                  allPackages.add(new OsvPackage(name, "npm", version));
+                  allPackages.add(new OsvPackage(name, Ecosystem.NPM, version));
                 }
               }
               JsonNode nested = node.get("dependencies");
@@ -303,7 +305,7 @@ public final class DependencyParser {
                   candidate = candidate.substring(1);
                 }
                 if (NPM_EXACT_VERSION_PATTERN.matcher(candidate).matches()) {
-                  allPackages.add(new OsvPackage(name, "npm", candidate));
+                  allPackages.add(new OsvPackage(name, Ecosystem.NPM, candidate));
                 }
               });
     }
@@ -349,19 +351,15 @@ public final class DependencyParser {
 
       Matcher reqMatcher = REQUIREMENT_PATTERN.matcher(line);
       if (reqMatcher.matches()) {
-        allPackages.add(new OsvPackage(reqMatcher.group(1), "PyPI", reqMatcher.group(2)));
+        allPackages.add(new OsvPackage(reqMatcher.group(1), Ecosystem.PYPI, reqMatcher.group(2)));
       }
     }
   }
 
   /** Removes trailing {@code --option[=value]} tokens from a requirement line. */
   private static String stripPipOptions(String line) {
-    String result = line;
-    int idx;
-    while ((idx = result.indexOf(" --")) >= 0) {
-      result = result.substring(0, idx);
-    }
-    return result;
+    int idx = line.indexOf(" --");
+    return idx < 0 ? line : line.substring(0, idx);
   }
 
   private static void parseGoMod(Project project, List<OsvPackage> allPackages) throws IOException {
@@ -430,7 +428,7 @@ public final class DependencyParser {
           modulePath = replacement[0];
           version = replacement[1];
         }
-        allPackages.add(new OsvPackage(modulePath, "Go", version));
+        allPackages.add(new OsvPackage(modulePath, Ecosystem.GO, version));
       }
     }
   }
@@ -442,29 +440,31 @@ public final class DependencyParser {
    */
   private static void parseReplaceDirective(String body, Map<String, String[]> replaces) {
     int arrow = body.indexOf("=>");
-    if (arrow < 0) return;
-    String left = body.substring(0, arrow).trim();
-    String right = body.substring(arrow + 2).trim();
-    String[] leftParts = left.split("\\s+");
-    if (leftParts.length < 1) return;
+    if (arrow < 0) {
+      return;
+    }
+    String[] leftParts = body.substring(0, arrow).trim().split("\\s+");
+    String[] rightParts = body.substring(arrow + 2).trim().split("\\s+");
+    // Bare "replace old => new" (no version) cannot be queried against OSV.
+    if (rightParts.length < 2) {
+      return;
+    }
     String oldPath = leftParts[0];
-    String[] rightParts = right.split("\\s+");
-    if (rightParts.length < 1) return;
     String newPath = rightParts[0];
     // Local path replacements (./... or /...) cannot be queried.
-    if (newPath.startsWith("./") || newPath.startsWith("../") || newPath.startsWith("/")) return;
-    String newVersion = rightParts.length >= 2 ? rightParts[1].replaceFirst("^v", "") : null;
-    if (newVersion == null) return;
-    replaces.put(oldPath, new String[] {newPath, newVersion});
+    if (newPath.startsWith("./") || newPath.startsWith("../") || newPath.startsWith("/")) {
+      return;
+    }
+    replaces.put(oldPath, new String[] {newPath, rightParts[1].replaceFirst("^v", "")});
   }
 
   private static List<OsvPackage> deduplicateAndSort(List<OsvPackage> allPackages) {
     // Aggregation: Deduplicate based on name, version, ecosystem
-    Map<DependencyGroupingKey, List<OsvPackage>> grouped =
+    Map<PackageKey, List<OsvPackage>> grouped =
         allPackages.stream()
             .collect(
                 Collectors.groupingBy(
-                    pkg -> new DependencyGroupingKey(pkg.name(), pkg.version(), pkg.ecosystem())));
+                    pkg -> new PackageKey(pkg.name(), pkg.version(), pkg.ecosystem())));
 
     return grouped.values().stream()
         .map(
@@ -485,15 +485,21 @@ public final class DependencyParser {
         .toList();
   }
 
-  private static List<OsvPackage> parseMavenDependencies(MavenProjectsManager projectsManager) {
-    List<OsvPackage> dependencies = new ArrayList<>();
+  private static void parseMavenDependencies(
+      MavenProjectsManager projectsManager,
+      List<OsvPackage> dependencies,
+      Map<VirtualFile, Map<String, String>> resolvedVersions) {
     for (MavenProject mavenProject : projectsManager.getProjects()) {
+      VirtualFile pom = mavenProject.getFile();
+      Map<String, String> resolvedIndex = pom != null ? new HashMap<>() : null;
       for (MavenArtifactNode node : mavenProject.getDependencyTree()) {
         // Start chain with the direct dependency itself
-        collectMavenDependencies(node, new ArrayList<>(), dependencies);
+        collectMavenDependencies(node, pom, new ArrayList<>(), dependencies, resolvedIndex);
+      }
+      if (resolvedIndex != null && !resolvedIndex.isEmpty()) {
+        resolvedVersions.put(pom, Map.copyOf(resolvedIndex));
       }
     }
-    return dependencies;
   }
 
   /**
@@ -560,38 +566,54 @@ public final class DependencyParser {
    * IntelliJ's own classpath collector, which skips mediated nodes without recursing into them.
    */
   private static void collectMavenDependencies(
-      MavenArtifactNode node, List<String> parentChain, List<OsvPackage> result) {
+      MavenArtifactNode node,
+      VirtualFile pom,
+      List<String> parentChain,
+      List<OsvPackage> result,
+      Map<String, String> resolvedIndex) {
     if (node.getState() != MavenArtifactState.ADDED) {
       // Not on the classpath: the traversal stops here, so no mediated-away artifact version (nor
       // anything only reachable through it) ever reaches OSV.
       return;
     }
 
-    MavenArtifact artifact = node.getArtifact();
-    String groupId = artifact.getGroupId();
-    String artifactId = artifact.getArtifactId();
-    String version = artifact.getVersion();
-
     List<String> currentChain = new ArrayList<>(parentChain);
-    if (groupId != null && artifactId != null && version != null) {
-      String fullName = groupId + ":" + artifactId;
-      currentChain.add(fullName);
-      result.add(new OsvPackage(fullName, MAVEN_ECOSYSTEM, version, Set.of(currentChain)));
+    MavenArtifact artifact = node.getArtifact();
+    if (artifact == null) {
+      // A stale or partially resolved model can hand out an ADDED node without its artifact: an
+      // NPE inside the parse's read action would abort the whole Maven pass and silently lose
+      // every other dependency. Log-and-continue keeps the pom's remaining entries reachable.
+      LOG.warn("Skipping Maven artifact node without a resolved artifact.");
     } else {
-      // Fail fast enough to be visible: a malformed artifact silently feeds bogus or empty OSV
-      // queries, which is data loss that must not hide behind debug-level logging.
-      LOG.warn(
-          "Skipping Maven dependency "
-              + groupId
-              + ":"
-              + artifactId
-              + ":"
-              + version
-              + " (missing coordinates or version)");
+      String groupId = artifact.getGroupId();
+      String artifactId = artifact.getArtifactId();
+      String version = artifact.getVersion();
+
+      if (groupId != null && artifactId != null && version != null) {
+        String fullName = groupId + ":" + artifactId;
+        currentChain.add(fullName);
+        result.add(new OsvPackage(fullName, Ecosystem.MAVEN, version, Set.of(currentChain)));
+        // Record the resolved version for the annotator: this walk visits the tree in pre-order,
+        // exactly like findResolvedVersion, so the first ADDED entry wins (putIfAbsent).
+        if (resolvedIndex != null) {
+          resolvedIndex.putIfAbsent(fullName, version);
+        }
+      } else {
+        // Fail fast enough to be visible: a malformed artifact silently feeds bogus or empty OSV
+        // queries, which is data loss that must not hide behind debug-level logging.
+        LOG.warn(
+            "Skipping Maven dependency "
+                + groupId
+                + ":"
+                + artifactId
+                + ":"
+                + version
+                + " (missing coordinates or version)");
+      }
     }
 
     for (MavenArtifactNode child : node.getDependencies()) {
-      collectMavenDependencies(child, currentChain, result);
+      collectMavenDependencies(child, pom, currentChain, result, resolvedIndex);
     }
   }
 
@@ -629,7 +651,7 @@ public final class DependencyParser {
       if (group != null && artifact != null && version != null) {
         String fullName = group + ":" + artifact;
         dependencies.add(
-            new OsvPackage(fullName, MAVEN_ECOSYSTEM, version, Set.of(List.of(fullName))));
+            new OsvPackage(fullName, Ecosystem.MAVEN, version, Set.of(List.of(fullName))));
       }
     }
   }
@@ -672,7 +694,7 @@ public final class DependencyParser {
       }
 
       if (!parts[0].isBlank() && !parts[1].isBlank() && startsWithDigit(version)) {
-        return new OsvPackage(fullName, MAVEN_ECOSYSTEM, version, Set.of(List.of(fullName)));
+        return new OsvPackage(fullName, Ecosystem.MAVEN, version, Set.of(List.of(fullName)));
       }
     }
     return null;
@@ -706,7 +728,7 @@ public final class DependencyParser {
       String version = cacheMatcher.group(3);
       return new OsvPackage(
           group + ":" + artifact,
-          MAVEN_ECOSYSTEM,
+          Ecosystem.MAVEN,
           version,
           Set.of(List.of(group + ":" + artifact)));
     }
@@ -716,17 +738,26 @@ public final class DependencyParser {
       String artifact = mavenMatcher.group(2);
       String version = mavenMatcher.group(3);
       String fullName = group + ":" + artifact;
-      return new OsvPackage(fullName, MAVEN_ECOSYSTEM, version, Set.of(List.of(fullName)));
+      return new OsvPackage(fullName, Ecosystem.MAVEN, version, Set.of(List.of(fullName)));
     }
     return null;
   }
 
   /**
-   * Dedicated record for grouping to avoid string concatenation overhead.
-   *
-   * @param name Name of the package
-   * @param version Version of the package
-   * @param ecosystem Ecosystem of the package
+   * What a scan's parse pass learned: the packages to ask OSV about, and — for every Maven pom it
+   * walked — the map of {@code group:artifact → resolved version} that {@link
+   * #collectMavenDependencies} applied while walking, so the annotator can resolve {@code ${...}} -
+   * or inherited versions with an O(1) lookup instead of re-walking the tree.
    */
-  private record DependencyGroupingKey(String name, String version, String ecosystem) {}
+  public record ParseOutcome(
+      List<OsvPackage> packages, Map<VirtualFile, Map<String, String>> resolvedVersions) {
+    public ParseOutcome {
+      packages = List.copyOf(packages);
+      resolvedVersions = Map.copyOf(resolvedVersions);
+    }
+
+    public static ParseOutcome of(List<OsvPackage> packages) {
+      return new ParseOutcome(packages, Map.of());
+    }
+  }
 }

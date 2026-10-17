@@ -20,9 +20,18 @@ import com.intellij.openapi.project.Project;
 public final class VulnSpotterNotifications {
 
   public static final String GROUP_ID = "VulnSpotter Notifications";
+  public static final String TITLE = "VulnSpotter";
 
   private VulnSpotterNotifications() {
     throw new UnsupportedOperationException("Utility class");
+  }
+
+  /**
+   * Shows a balloon of the given type under the plugin's own title. Silently ignores a null
+   * project.
+   */
+  public static void notify(Project project, NotificationType type, String content) {
+    notify(project, TITLE, content, type);
   }
 
   /** Shows an informational balloon to the user. Silently ignores a null project. */

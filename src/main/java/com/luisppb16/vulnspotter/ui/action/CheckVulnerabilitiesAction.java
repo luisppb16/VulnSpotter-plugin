@@ -43,7 +43,7 @@ public class CheckVulnerabilitiesAction extends AnAction {
     ToolWindow toolWindow = ToolWindowManager.getInstance(project).getToolWindow(TOOL_WINDOW_ID);
     if (toolWindow == null) {
       VulnSpotterNotifications.notifyError(
-          project, "VulnSpotter", "The VulnSpotter tool window is not available.");
+          project, VulnSpotterNotifications.TITLE, "The VulnSpotter tool window is not available.");
       return;
     }
 
@@ -65,7 +65,7 @@ public class CheckVulnerabilitiesAction extends AnAction {
           if (panel == null) {
             VulnSpotterNotifications.notifyWarning(
                 project,
-                "VulnSpotter",
+                VulnSpotterNotifications.TITLE,
                 "The VulnSpotter panel is not initialized yet. Try again in a moment.");
             return;
           }

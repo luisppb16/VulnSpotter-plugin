@@ -12,6 +12,7 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.stream.Stream;
 
 /**
  * Resolves the recommended fixed version for a vulnerability affecting a scanned package.
@@ -32,15 +33,7 @@ public final class FixedVersionResolver {
    * fixed events.
    */
   public static String resolve(OsvVulnerability vuln, String packageName, String currentVersion) {
-    List<String> fixedVersions = fixedVersions(vuln, packageName);
-    if (fixedVersions.isEmpty()) {
-      return UNKNOWN;
-    }
-    if (currentVersion == null || currentVersion.isBlank()) {
-      return String.join(", ", fixedVersions);
-    }
-    String best = VersionUtil.findBestFixedVersion(fixedVersions, currentVersion);
-    return best != null ? best : String.join(", ", fixedVersions);
+    return chooseFixed(fixedVersions(vuln, packageName), currentVersion);
   }
 
   /** All distinct fixed versions declared for the package in ECOSYSTEM/SEMVER ranges. */
@@ -48,18 +41,7 @@ public final class FixedVersionResolver {
     if (vuln == null || vuln.affected() == null) {
       return List.of();
     }
-    return vuln.affected().stream()
-        .filter(a -> a.pkg() != null && isMatchingPackage(packageName, a.pkg().name()))
-        .filter(a -> a.ranges() != null)
-        .flatMap(a -> a.ranges().stream())
-        .filter(r -> "ECOSYSTEM".equalsIgnoreCase(r.type()) || "SEMVER".equalsIgnoreCase(r.type()))
-        .filter(r -> r.events() != null)
-        .flatMap(r -> r.events().stream())
-        .map(OsvVulnerability.Event::fixed)
-        .filter(Objects::nonNull)
-        .filter(v -> !v.isBlank())
-        .distinct()
-        .toList();
+    return fixedVersionsFrom(applicableRanges(vuln, packageName).toList());
   }
 
   /**
@@ -110,16 +92,67 @@ public final class FixedVersionResolver {
     if (vuln == null || vuln.affected() == null) {
       return List.of();
     }
-    return vuln.affected().stream()
-        .filter(a -> a.pkg() != null && isMatchingPackage(packageName, a.pkg().name()))
-        .filter(a -> a.ranges() != null)
-        .flatMap(a -> a.ranges().stream())
-        .filter(r -> "ECOSYSTEM".equalsIgnoreCase(r.type()) || "SEMVER".equalsIgnoreCase(r.type()))
+    return affectedRangeTexts(applicableRanges(vuln, packageName).toList());
+  }
+
+  /**
+   * {@link #resolve} and {@link #affectedRanges} walk the same applicable ranges; card rendering
+   * (details cards in the tool window, exports) needs the pair per record and derives it from one
+   * pass instead of walking {@code vuln.affected()} twice.
+   */
+  public static Resolution resolveWithRanges(
+      OsvVulnerability vuln, String packageName, String currentVersion) {
+    if (vuln == null || vuln.affected() == null) {
+      return new Resolution(UNKNOWN, List.of());
+    }
+    List<OsvVulnerability.Range> ranges = applicableRanges(vuln, packageName).toList();
+    return new Resolution(
+        chooseFixed(fixedVersionsFrom(ranges), currentVersion), affectedRangeTexts(ranges));
+  }
+
+  /** {@code UNKNOWN} when empty; otherwise the best fixed version or the full joined list. */
+  private static String chooseFixed(List<String> fixedVersions, String currentVersion) {
+    if (fixedVersions.isEmpty()) {
+      return UNKNOWN;
+    }
+    if (currentVersion == null || currentVersion.isBlank()) {
+      return String.join(", ", fixedVersions);
+    }
+    String best = VersionUtil.findBestFixedVersion(fixedVersions, currentVersion);
+    return best != null ? best : String.join(", ", fixedVersions);
+  }
+
+  private static List<String> fixedVersionsFrom(Collection<OsvVulnerability.Range> ranges) {
+    return ranges.stream()
+        .filter(r -> r.events() != null)
+        .flatMap(r -> r.events().stream())
+        .map(OsvVulnerability.Event::fixed)
+        .filter(Objects::nonNull)
+        .filter(v -> !v.isBlank())
+        .distinct()
+        .toList();
+  }
+
+  private static List<String> affectedRangeTexts(Collection<OsvVulnerability.Range> ranges) {
+    return ranges.stream()
         .filter(r -> r.events() != null && !r.events().isEmpty())
         .map(FixedVersionResolver::formatRange)
         .filter(s -> !s.isBlank())
         .distinct()
         .toList();
+  }
+
+  /**
+   * The ECOSYSTEM/SEMVER ranges declared for this package — the shared prefix of {@code
+   * fixedVersions} and {@code affectedRanges}; other range kinds carry no actionable versions.
+   */
+  private static Stream<OsvVulnerability.Range> applicableRanges(
+      OsvVulnerability vuln, String packageName) {
+    return vuln.affected().stream()
+        .filter(a -> a.pkg() != null && isMatchingPackage(packageName, a.pkg().name()))
+        .filter(a -> a.ranges() != null)
+        .flatMap(a -> a.ranges().stream())
+        .filter(r -> "ECOSYSTEM".equalsIgnoreCase(r.type()) || "SEMVER".equalsIgnoreCase(r.type()));
   }
 
   private static String formatRange(OsvVulnerability.Range range) {
@@ -150,4 +183,7 @@ public final class FixedVersionResolver {
     }
     return sb.toString();
   }
+
+  /** Recommended fix plus formatted affected ranges, for renderers that need the pair. */
+  public record Resolution(String fixedVersion, List<String> affectedRanges) {}
 }

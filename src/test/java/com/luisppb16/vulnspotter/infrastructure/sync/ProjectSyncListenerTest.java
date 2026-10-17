@@ -7,8 +7,6 @@
 
 package com.luisppb16.vulnspotter.infrastructure.sync;
 
-import static org.mockito.ArgumentMatchers.anyList;
-import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mockStatic;
 import static org.mockito.Mockito.never;
@@ -58,8 +56,6 @@ class ProjectSyncListenerTest {
 
     scannerStatic.when(() -> VulnerabilityScannerService.getInstance(project)).thenReturn(scanner);
     settingsStatic.when(VulnSpotterSettings::getInstance).thenReturn(settings);
-    // A listener test must never reach the real UI plumbing.
-    doNothing().when(scanner).updateResults(anyList());
 
     listener = new ProjectSyncListener();
   }
