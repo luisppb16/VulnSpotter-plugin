@@ -19,7 +19,7 @@ import org.jetbrains.annotations.NotNull;
 
 @State(name = "VulnSpotterSettings", storages = @Storage("vulnSpotterSettings.xml"))
 @Service(Service.Level.APP)
-public class VulnSpotterSettings implements PersistentStateComponent<VulnSpotterSettings> {
+public final class VulnSpotterSettings implements PersistentStateComponent<VulnSpotterSettings> {
 
   private int cacheDurationMinutes = 60;
   private String minimumSeverity = "LOW";

@@ -13,6 +13,7 @@ import com.luisppb16.vulnspotter.domain.model.OsvPackage;
 import com.luisppb16.vulnspotter.domain.model.OsvVulnerability;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * Factory of {@code OsvVulnerability} / {@code OsvPackage} / {@code ScanResult} test fixtures so
@@ -103,6 +104,29 @@ public final class VulnFixtures {
                 "ECOSYSTEM", List.of(new OsvVulnerability.Event("0", fixed, null, null)))),
         null,
         null);
+  }
+
+  /** Event with the given opening/closing marks (null ⇒ absent). */
+  public static OsvVulnerability.Event event(
+      String introduced, String fixed, String lastAffected, String limit) {
+    return new OsvVulnerability.Event(introduced, fixed, lastAffected, limit);
+  }
+
+  /** Range of the given type over the given ordered events. */
+  public static OsvVulnerability.Range range(String type, List<OsvVulnerability.Event> events) {
+    return new OsvVulnerability.Range(type, events);
+  }
+
+  /** Affected entry for the package over custom windows instead of a single fixed event. */
+  public static OsvVulnerability.Affected affectedWithWindows(
+      String packageName, List<OsvVulnerability.Range> ranges) {
+    return new OsvVulnerability.Affected(
+        new OsvVulnerability.Package(packageName, Ecosystem.MAVEN, null), ranges, null, null);
+  }
+
+  /** A {@link Ecosystem#MAVEN Maven} package fixture carrying explicit dependency chains. */
+  public static OsvPackage pkgWithChains(String name, String version, List<List<String>> chains) {
+    return new OsvPackage(name, Ecosystem.MAVEN, version, Set.copyOf(chains));
   }
 
   /** A {@link Ecosystem#MAVEN Maven} package fixture. */

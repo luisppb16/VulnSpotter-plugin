@@ -11,6 +11,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.luisppb16.vulnspotter.application.service.VulnerabilityScannerService;
+import com.luisppb16.vulnspotter.domain.model.DependencyProvenance;
 import com.luisppb16.vulnspotter.domain.model.Ecosystem;
 import com.luisppb16.vulnspotter.domain.model.OsvVulnerability;
 import com.luisppb16.vulnspotter.domain.service.FixedVersionResolver;
@@ -91,6 +92,14 @@ public final class ReportExportService {
       item.put("version", sr.pkg().version());
       item.put("ecosystem", sr.pkg().ecosystem());
       item.put("vulnerable", sr.vulnerable());
+      DependencyProvenance provenance = DependencyProvenance.of(sr.pkg().dependencyChains());
+      if (provenance.known()) {
+        item.put("provenance", provenance.shortLabel());
+        if (!provenance.transitiveRoots().isEmpty()) {
+          ArrayNode roots = item.putArray("transitiveRoots");
+          provenance.transitiveRoots().forEach(roots::add);
+        }
+      }
       FixedVersionResolver.recommendUpgrade(
               sr.vulnerabilities(), sr.pkg().name(), sr.pkg().version())
           .ifPresent(fix -> item.put("recommendedFix", fix));
@@ -111,14 +120,14 @@ public final class ReportExportService {
         if (vuln.summary() != null && !vuln.summary().isBlank()) {
           v.put("summary", vuln.summary());
         }
-        List<String> ranges = FixedVersionResolver.affectedRanges(vuln, sr.pkg().name());
-        if (!ranges.isEmpty()) {
+        FixedVersionResolver.Resolution resolution =
+            FixedVersionResolver.resolveWithRanges(vuln, sr.pkg().name(), sr.pkg().version());
+        appendAffectedBranches(v, resolution);
+        if (!resolution.affectedRanges().isEmpty()) {
           ArrayNode r = v.putArray("affectedRanges");
-          ranges.forEach(r::add);
+          resolution.affectedRanges().forEach(r::add);
         }
-        v.put(
-            "fixedVersion",
-            FixedVersionResolver.resolve(vuln, sr.pkg().name(), sr.pkg().version()));
+        v.put("fixedVersion", resolution.fixedVersion());
         if (!vuln.references().isEmpty()) {
           ArrayNode refs = v.putArray("references");
           vuln.references().stream()
@@ -142,7 +151,7 @@ public final class ReportExportService {
     StringBuilder csv = new StringBuilder();
     csv.append(
         "Package,Version,Ecosystem,Vulnerability ID,CVE Aliases,Severity,CVSS,"
-            + "Affected Range,Recommended Fix,Summary\r\n");
+            + "Affected Range,Recommended Fix,Summary,Provenance\r\n");
     for (VulnerabilityScannerService.ScanResult sr : scanResults) {
       String recommendedFix =
           sr.vulnerable()
@@ -150,6 +159,7 @@ public final class ReportExportService {
                       sr.vulnerabilities(), sr.pkg().name(), sr.pkg().version())
                   .orElse("")
               : "";
+      String provenance = provenanceValue(sr.pkg().dependencyChains());
       if (!sr.vulnerable() || sr.vulnerabilities().isEmpty()) {
         csv.append(csvField(sr.pkg().name()))
             .append(',')
@@ -159,6 +169,8 @@ public final class ReportExportService {
             .append(',')
             .append("(none),,,,,,")
             .append(csvField(recommendedFix))
+            .append(',')
+            .append(csvField(provenance))
             .append(",\r\n");
         continue;
       }
@@ -171,8 +183,9 @@ public final class ReportExportService {
                 : vuln.aliases().stream()
                     .filter(OsvVulnerability::isCveAlias)
                     .collect(Collectors.joining(" "));
-        String ranges =
-            String.join("; ", FixedVersionResolver.affectedRanges(vuln, sr.pkg().name()));
+        FixedVersionResolver.Resolution resolution =
+            FixedVersionResolver.resolveWithRanges(vuln, sr.pkg().name(), sr.pkg().version());
+        String ranges = branchCells(resolution, sr.pkg().version());
         csv.append(csvField(sr.pkg().name()))
             .append(',')
             .append(csvField(sr.pkg().version()))
@@ -192,6 +205,8 @@ public final class ReportExportService {
             .append(csvField(recommendedFix))
             .append(',')
             .append(csvField(vuln.summary() == null ? "" : vuln.summary()))
+            .append(',')
+            .append(csvField(provenance))
             .append("\r\n");
       }
     }
@@ -279,11 +294,25 @@ public final class ReportExportService {
         properties.put("package", sr.pkg().name());
         properties.put("installedVersion", sr.pkg().version());
         properties.put("ecosystem", sr.pkg().ecosystem());
+        DependencyProvenance provenance = DependencyProvenance.of(sr.pkg().dependencyChains());
+        if (provenance.known()) {
+          properties.put("provenance", provenance.shortLabel());
+          if (!provenance.transitiveRoots().isEmpty()) {
+            ArrayNode roots = properties.putArray("transitiveRoots");
+            provenance.transitiveRoots().forEach(roots::add);
+          }
+        }
         FixedVersionResolver.recommendUpgrade(List.of(vuln), sr.pkg().name(), sr.pkg().version())
             .ifPresent(fix -> properties.put("recommendedFix", fix));
-        List<String> ranges = FixedVersionResolver.affectedRanges(vuln, sr.pkg().name());
-        if (!ranges.isEmpty()) {
-          properties.put("affectedRange", String.join(", ", ranges));
+        FixedVersionResolver.Resolution resolution =
+            FixedVersionResolver.resolveWithRanges(vuln, sr.pkg().name(), sr.pkg().version());
+        if (!resolution.branches().isEmpty()) {
+          appendAffectedBranches(properties, resolution);
+          properties.put(
+              "affectedRange",
+              resolution.branches().stream()
+                  .map(ReportExportService::branchText)
+                  .collect(Collectors.joining(", ")));
         }
         if (!vuln.aliases().isEmpty()) {
           ArrayNode aliases = properties.putArray("aliases");
@@ -332,6 +361,10 @@ public final class ReportExportService {
           .append("  (")
           .append(sr.pkg().ecosystem())
           .append(")\n");
+      DependencyProvenance provenance = DependencyProvenance.of(sr.pkg().dependencyChains());
+      if (provenance.known()) {
+        md.append("Dependency provenance: ").append(provenance.label()).append('\n');
+      }
       md.append("Recommended fix: **").append(fix).append("**\n\n");
       for (OsvVulnerability vuln : sr.vulnerabilities()) {
         String severity = SeverityAnalyzer.getSeverity(vuln);
@@ -346,9 +379,17 @@ public final class ReportExportService {
         if (score != null) {
           md.append(" (CVSS ").append(SeverityAnalyzer.formatScore(score)).append(")");
         }
-        List<String> ranges = FixedVersionResolver.affectedRanges(vuln, sr.pkg().name());
-        if (!ranges.isEmpty()) {
-          md.append(" — affected: `").append(String.join(", ", ranges)).append("`");
+        FixedVersionResolver.Resolution resolution =
+            FixedVersionResolver.resolveWithRanges(vuln, sr.pkg().name(), sr.pkg().version());
+        if (!resolution.branches().isEmpty()) {
+          md.append('\n');
+          for (FixedVersionResolver.AffectedWindow branch : resolution.branches()) {
+            md.append("  - ").append(branchText(branch));
+            if (branch.containsInstalledVersion()) {
+              md.append(" ← installed (").append(sr.pkg().version()).append(')');
+            }
+            md.append('\n');
+          }
         }
         if (vuln.summary() != null && !vuln.summary().isBlank()) {
           md.append(" — ").append(vuln.summary());
@@ -367,5 +408,63 @@ public final class ReportExportService {
       case 2 -> "note";
       default -> "warning";
     };
+  }
+
+  /**
+   * Labeled branch text, e.g. {@code "Branch 3.0.x: >=3.0.0, <3.1.7 (fix: 3.1.7)"}; branches
+   * without a published fix are marked instead of listing a version to upgrade to.
+   */
+  private static String branchText(FixedVersionResolver.AffectedWindow branch) {
+    StringBuilder text = new StringBuilder();
+    if (branch.branchLabel() != null) {
+      text.append(branch.branchLabel()).append(": ");
+    }
+    text.append(branch.rangeText());
+    if (branch.fixedVersion() != null) {
+      text.append(" (fix: ").append(branch.fixedVersion()).append(')');
+    } else {
+      text.append(" (no published fix)");
+    }
+    return text.toString();
+  }
+
+  /** CSV cell with one entry per branch; the installed version's branch carries its marker. */
+  private static String branchCells(
+      FixedVersionResolver.Resolution resolution, String installedVersion) {
+    return resolution.branches().stream()
+        .map(
+            branch -> {
+              String cell = branchText(branch);
+              if (branch.containsInstalledVersion()) {
+                cell = cell + " (install: " + installedVersion + ")";
+              }
+              return cell;
+            })
+        .collect(Collectors.joining("; "));
+  }
+
+  /** Structured {@code affectedBranches} array for JSON/SARIF consumers. */
+  private static void appendAffectedBranches(
+      ObjectNode node, FixedVersionResolver.Resolution resolution) {
+    ArrayNode branches = node.putArray("affectedBranches");
+    for (FixedVersionResolver.AffectedWindow branch : resolution.branches()) {
+      ObjectNode item = branches.addObject();
+      if (branch.branchLabel() != null) {
+        item.put("branch", branch.branchLabel());
+      }
+      item.put("range", branch.rangeText());
+      if (branch.fixedVersion() != null) {
+        item.put("fixedVersion", branch.fixedVersion());
+      }
+      if (branch.containsInstalledVersion()) {
+        item.put("containsInstalledVersion", true);
+      }
+    }
+  }
+
+  /** Provenance for export columns; empty when the scan has no chain data for the package. */
+  private static String provenanceValue(Set<List<String>> chains) {
+    DependencyProvenance provenance = DependencyProvenance.of(chains);
+    return provenance.known() ? provenance.shortLabel() : "";
   }
 }

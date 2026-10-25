@@ -37,6 +37,7 @@ import com.intellij.util.IconUtil;
 import com.intellij.util.ui.JBUI;
 import com.intellij.util.ui.UIUtil;
 import com.luisppb16.vulnspotter.application.service.VulnerabilityScannerService;
+import com.luisppb16.vulnspotter.domain.model.DependencyProvenance;
 import com.luisppb16.vulnspotter.domain.model.Ecosystem;
 import com.luisppb16.vulnspotter.domain.model.OsvVulnerability;
 import com.luisppb16.vulnspotter.domain.service.FixedVersionResolver;
@@ -58,7 +59,6 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -68,7 +68,6 @@ import java.util.Vector;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
-
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -290,14 +289,12 @@ public final class VulnSpotterToolWindow implements Disposable {
                 });
   }
 
-  private static String classificationLabel(boolean isDirect, Set<String> roots) {
-    if (isDirect && roots.isEmpty()) {
-      return "Direct dependency";
-    }
-    if (!isDirect) {
-      return "Transitive dependency";
-    }
-    return "Direct and transitive dependency";
+  private static String classificationLabel(DependencyProvenance provenance) {
+    return switch (provenance.kind()) {
+      case DependencyProvenance.Kind.TRANSITIVE -> "Transitive dependency";
+      case DependencyProvenance.Kind.MIXED -> "Direct and transitive dependency";
+      default -> "Direct dependency";
+    };
   }
 
   /** Pre-lowercased "name + vulnerability ids + aliases" text searched by the live filter. */
@@ -378,6 +375,15 @@ public final class VulnSpotterToolWindow implements Disposable {
         + (isDark ? "#eee" : "#222")
         + "; }"
         + ".fixed-box { background: rgba(67, 160, 71, 0.1); color: #2e7d32; padding: 8px 12px; border-radius: 6px; font-weight: 600; display: inline-flex; align-items: center; gap: 8px; margin: 12px 0; border: 1px solid rgba(67, 160, 71, 0.2); }"
+        + ".branch-list { margin: 4px 0 0 18px; padding: 0; }"
+        + ".branch-line { margin-top: 4px; font-size: 13px; }"
+        + ".branch-line.installed { color: #2e7d32; font-weight: 600; }"
+        + ".installed-tag { color: #2e7d32; font-size: 11px; }"
+        + ".provenance-badge { display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 4px; font-size: 10px; font-weight: 600; background: "
+        + (isDark ? "#3a3060" : "#ede7f6")
+        + "; color: "
+        + (isDark ? "#b39ddb" : "#4527a0")
+        + "; margin-left: 4px; }"
         + ".copy-btn { cursor: pointer; background: #2196f3; color: white; border: none; padding: 2px 8px; border-radius: 4px; font-size: 10px; transition: background 0.2s; }"
         + ".copy-btn:hover { background: #1976d2; }"
         + ".details { font-size: 13px; color: #888; margin-top: 12px; max-height: 150px; overflow-y: auto; background: "
@@ -928,43 +934,25 @@ public final class VulnSpotterToolWindow implements Disposable {
     sb.append("<div class='remediation-box'>");
     sb.append("<div class='remediation-title'>Remediation</div>");
 
-    Set<List<String>> chains = result.pkg().dependencyChains();
-    Set<String> roots = new HashSet<>();
-    boolean isDirect = isDirectDependency(chains, roots);
+    DependencyProvenance provenance = DependencyProvenance.of(result.pkg().dependencyChains());
+    boolean isDirect = provenance.kind() != DependencyProvenance.Kind.TRANSITIVE;
     String fixedVerStr = recommended != null ? recommended : UNKNOWN;
 
     sb.append("<div class='dep-classification'>")
-        .append(HtmlEscaper.escape(classificationLabel(isDirect, roots)))
+        .append(HtmlEscaper.escape(classificationLabel(provenance)))
         .append(DIV_CLOSE);
 
     if (isDirect) {
       appendDirectRemediation(sb, result, fixedVerStr);
     }
 
-    if (!roots.isEmpty()) {
+    if (!provenance.transitiveRoots().isEmpty()) {
       if (isDirect) {
         sb.append("<hr style='border: 0; border-top: 1px solid #ccc; margin: 8px 0;'/>");
       }
-      appendTransitiveRemediation(sb, result, fixedVerStr, roots);
+      appendTransitiveRemediation(sb, result, fixedVerStr, provenance.transitiveRoots());
     }
     sb.append(DIV_CLOSE);
-  }
-
-  private boolean isDirectDependency(Set<List<String>> chains, Set<String> roots) {
-    if (chains.isEmpty()) {
-      return true;
-    }
-    // Compute roots explicitly: a stream peek() side-effect is not guaranteed to run for every
-    // element when anyMatch() short-circuits, which would silently drop transitive roots.
-    boolean direct = false;
-    for (List<String> chain : chains) {
-      if (chain.size() > 1) {
-        roots.add(chain.getFirst());
-      } else {
-        direct = true;
-      }
-    }
-    return direct;
   }
 
   private void appendDirectRemediation(
@@ -987,7 +975,7 @@ public final class VulnSpotterToolWindow implements Disposable {
       StringBuilder sb,
       VulnerabilityScannerService.ScanResult result,
       String fixedVerStr,
-      Set<String> roots) {
+      List<String> roots) {
     if (!UNKNOWN.equals(fixedVerStr)) {
       sb.append("<p>For transitive dependencies, upgrade:</p>");
       sb.append("<ul>");
@@ -1023,7 +1011,11 @@ public final class VulnSpotterToolWindow implements Disposable {
               sb.append("<div class='card'>");
               sb.append(
                   VulnerabilityCardComposer.vulnCardInner(
-                      vuln, result.pkg().name(), result.pkg().version(), true));
+                      vuln,
+                      result.pkg().name(),
+                      result.pkg().version(),
+                      DependencyProvenance.of(result.pkg().dependencyChains()),
+                      true));
               sb.append(DIV_CLOSE);
             });
   }

@@ -319,9 +319,6 @@ public class OsvClient {
     return results;
   }
 
-  /** A queued follow-up page: the next-token query and its position in the batch. */
-  private record PendingQuery(OsvQuery query, int index) {}
-
   private OsvBatchResponse postBatch(List<OsvQuery> queries) {
     try {
       String requestBody = Json.MAPPER.writeValueAsString(new OsvBatchQuery(queries));
@@ -419,6 +416,9 @@ public class OsvClient {
   private interface HttpCall {
     String read() throws IOException;
   }
+
+  /** A queued follow-up page: the next-token query and its position in the batch. */
+  private record PendingQuery(OsvQuery query, int index) {}
 
   /**
    * Hydration input from the batch answer: id → "modified" stamp (insertion-ordered, stable for

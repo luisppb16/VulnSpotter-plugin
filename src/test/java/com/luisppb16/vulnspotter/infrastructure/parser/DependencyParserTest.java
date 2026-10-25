@@ -21,6 +21,8 @@ import com.intellij.openapi.externalSystem.model.ExternalProjectInfo;
 import com.intellij.openapi.externalSystem.model.ProjectKeys;
 import com.intellij.openapi.externalSystem.model.ProjectSystemId;
 import com.intellij.openapi.externalSystem.model.project.LibraryData;
+import com.intellij.openapi.externalSystem.model.project.LibraryDependencyData;
+import com.intellij.openapi.externalSystem.model.project.ModuleData;
 import com.intellij.openapi.externalSystem.model.project.ProjectData;
 import com.intellij.openapi.externalSystem.service.project.ProjectDataManager;
 import com.intellij.openapi.externalSystem.util.ExternalSystemApiUtil;
@@ -444,6 +446,9 @@ class DependencyParserTest {
       externalSystemStatic
           .when(() -> ExternalSystemApiUtil.findAll(eq(projectNode), eq(ProjectKeys.LIBRARY)))
           .thenReturn(List.of(libNode));
+      externalSystemStatic
+          .when(() -> ExternalSystemApiUtil.findAll(eq(projectNode), eq(ProjectKeys.MODULE)))
+          .thenReturn(List.of());
 
       // When
       List<OsvPackage> results = DependencyParser.parseDependencies(project).packages();
@@ -452,6 +457,86 @@ class DependencyParserTest {
       assertThat(results).hasSize(1);
       assertThat(results.get(0).name()).isEqualTo("com.example:gradle-lib");
       assertThat(results.get(0).version()).isEqualTo("2.0.0");
+    }
+
+    @Test
+    @DisplayName("should_attach_gradle_dependency_chains_for_provenance")
+    void shouldAttachGradleDependencyChainsForProvenance() {
+      // Given: a module whose dependency tree nests the Jackson core under the platform
+      // test framework, the real shape that pulls tools.jackson.core into the classpath.
+      when(mavenProjectsManager.hasProjects()).thenReturn(false); // Skip Maven
+
+      ExternalProjectInfo projectInfo = mock(ExternalProjectInfo.class);
+      DataNode<ProjectData> projectNode = mock(DataNode.class);
+      when(projectInfo.getExternalProjectStructure()).thenReturn(projectNode);
+      when(projectDataManager.getExternalProjectsData(project, GradleConstants.SYSTEM_ID))
+          .thenReturn(List.of(projectInfo));
+
+      DataNode<ModuleData> moduleNode = mock(DataNode.class);
+      externalSystemStatic
+          .when(() -> ExternalSystemApiUtil.findAll(eq(projectNode), eq(ProjectKeys.MODULE)))
+          .thenReturn(List.of(moduleNode));
+
+      DataNode<LibraryData> jacksonLibNode = mock(DataNode.class);
+      LibraryData jacksonLibRoot = mock(LibraryData.class);
+      when(jacksonLibRoot.getGroupId()).thenReturn("tools.jackson.core");
+      when(jacksonLibRoot.getArtifactId()).thenReturn("jackson-core");
+      when(jacksonLibRoot.getVersion()).thenReturn("3.1.4");
+      when(jacksonLibNode.getData()).thenReturn(jacksonLibRoot);
+      externalSystemStatic
+          .when(() -> ExternalSystemApiUtil.findAll(eq(projectNode), eq(ProjectKeys.LIBRARY)))
+          .thenReturn(List.of());
+      externalSystemStatic
+          .when(() -> ExternalSystemApiUtil.findAll(eq(moduleNode), eq(ProjectKeys.LIBRARY)))
+          .thenReturn(List.of(jacksonLibNode));
+
+      DataNode<LibraryDependencyData> frameworkDep = mock(DataNode.class);
+      LibraryDependencyData frameworkDepData = mock(LibraryDependencyData.class);
+      LibraryData frameworkLib = mock(LibraryData.class);
+      when(frameworkDep.getData()).thenReturn(frameworkDepData);
+      when(frameworkDepData.getTarget()).thenReturn(frameworkLib);
+      when(frameworkLib.getGroupId()).thenReturn("com.jetbrains.intellij.platform");
+      when(frameworkLib.getArtifactId()).thenReturn("test-framework-core");
+
+      DataNode<LibraryDependencyData> jacksonDep = mock(DataNode.class);
+      LibraryDependencyData jacksonDepData = mock(LibraryDependencyData.class);
+      LibraryData jacksonLib = mock(LibraryData.class);
+      when(jacksonDep.getData()).thenReturn(jacksonDepData);
+      when(jacksonDepData.getTarget()).thenReturn(jacksonLib);
+      when(jacksonLib.getGroupId()).thenReturn("tools.jackson.core");
+      when(jacksonLib.getArtifactId()).thenReturn("jackson-core");
+
+      externalSystemStatic
+          .when(
+              () ->
+                  ExternalSystemApiUtil.getChildren(
+                      eq(moduleNode), eq(ProjectKeys.LIBRARY_DEPENDENCY)))
+          .thenReturn(List.of(frameworkDep));
+      externalSystemStatic
+          .when(
+              () ->
+                  ExternalSystemApiUtil.getChildren(
+                      eq(frameworkDep), eq(ProjectKeys.LIBRARY_DEPENDENCY)))
+          .thenReturn(List.of(jacksonDep));
+      externalSystemStatic
+          .when(
+              () ->
+                  ExternalSystemApiUtil.getChildren(
+                      eq(jacksonDep), eq(ProjectKeys.LIBRARY_DEPENDENCY)))
+          .thenReturn(List.of());
+
+      // When
+      List<OsvPackage> results = DependencyParser.parseDependencies(project).packages();
+
+      // Then: the nested coordinate carries the chain that pulls it in.
+      assertThat(results).hasSize(1);
+      assertThat(results.get(0).name()).isEqualTo("tools.jackson.core:jackson-core");
+      assertThat(results.get(0).version()).isEqualTo("3.1.4");
+      assertThat(results.get(0).dependencyChains())
+          .containsExactly(
+              List.of(
+                  "com.jetbrains.intellij.platform:test-framework-core",
+                  "tools.jackson.core:jackson-core"));
     }
   }
 

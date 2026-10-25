@@ -20,6 +20,8 @@ import java.util.regex.Pattern;
  */
 public final class VersionUtil {
 
+  private static final Pattern NON_VERSION_CHARS = Pattern.compile("[^0-9.]");
+
   private VersionUtil() {}
 
   /**
@@ -97,8 +99,6 @@ public final class VersionUtil {
     }
     return false;
   }
-
-  private static final Pattern NON_VERSION_CHARS = Pattern.compile("[^0-9.]");
 
   private static boolean isSameMajor(String v1, String v2) {
     return getMajor(v1).equals(getMajor(v2));

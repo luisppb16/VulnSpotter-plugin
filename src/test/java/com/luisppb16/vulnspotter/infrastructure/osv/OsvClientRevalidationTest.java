@@ -13,8 +13,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.mockStatic;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.when;
@@ -54,6 +54,7 @@ class OsvClientRevalidationTest {
   private ExecutorService executorService;
   private OsvClient client;
   private MockedStatic<HttpRequests> httpRequests;
+  private MockedStatic<VulnSpotterSettings> settingsMock;
 
   /** Minimal helpers mirroring the real HttpRequests builder chain. */
   private static void stubPost(MockedStatic<HttpRequests> http, String batchJson)
@@ -78,8 +79,6 @@ class OsvClientRevalidationTest {
     return new OsvVulnerability(
         "GHSA-1", "s", null, null, null, null, modified, null, null, null, null);
   }
-
-  private MockedStatic<VulnSpotterSettings> settingsMock;
 
   @BeforeEach
   void setUp() {

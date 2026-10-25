@@ -14,6 +14,7 @@ import com.intellij.openapi.externalSystem.model.DataNode;
 import com.intellij.openapi.externalSystem.model.ExternalProjectInfo;
 import com.intellij.openapi.externalSystem.model.ProjectKeys;
 import com.intellij.openapi.externalSystem.model.project.LibraryData;
+import com.intellij.openapi.externalSystem.model.project.LibraryDependencyData;
 import com.intellij.openapi.externalSystem.model.project.ModuleData;
 import com.intellij.openapi.externalSystem.model.project.ProjectData;
 import com.intellij.openapi.externalSystem.service.project.ProjectDataManager;
@@ -40,6 +41,7 @@ import java.util.Collection;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -626,23 +628,58 @@ public final class DependencyParser {
       DataNode<ProjectData> projectNode = info.getExternalProjectStructure();
       if (projectNode == null) continue;
 
+      Map<String, Set<List<String>>> chains = gradleDependencyChains(projectNode);
+
       // Check for libraries at project level
       processLibraryNodes(
-          ExternalSystemApiUtil.findAll(projectNode, ProjectKeys.LIBRARY), dependencies);
+          ExternalSystemApiUtil.findAll(projectNode, ProjectKeys.LIBRARY), dependencies, chains);
 
       // Check for libraries at module level
       Collection<DataNode<ModuleData>> moduleNodes =
           ExternalSystemApiUtil.findAll(projectNode, ProjectKeys.MODULE);
       for (DataNode<ModuleData> moduleNode : moduleNodes) {
         processLibraryNodes(
-            ExternalSystemApiUtil.findAll(moduleNode, ProjectKeys.LIBRARY), dependencies);
+            ExternalSystemApiUtil.findAll(moduleNode, ProjectKeys.LIBRARY), dependencies, chains);
       }
     }
     return dependencies;
   }
 
+  /**
+   * Dependency chains of the Gradle model: every dependency node nests its transitive imports, so a
+   * coordinate reached below another one carries the path that pulls it in (e.g. platform test
+   * framework → its Jackson core) and can be labeled transitive instead of declared.
+   */
+  private static Map<String, Set<List<String>>> gradleDependencyChains(
+      DataNode<ProjectData> projectNode) {
+    Map<String, Set<List<String>>> chains = new HashMap<>();
+    for (DataNode<ModuleData> moduleNode :
+        ExternalSystemApiUtil.findAll(projectNode, ProjectKeys.MODULE)) {
+      collectDependencyChains(moduleNode, new ArrayList<>(), chains);
+    }
+    return chains;
+  }
+
+  private static void collectDependencyChains(
+      DataNode<?> node, List<String> chain, Map<String, Set<List<String>>> chains) {
+    for (DataNode<LibraryDependencyData> dependency :
+        ExternalSystemApiUtil.getChildren(node, ProjectKeys.LIBRARY_DEPENDENCY)) {
+      LibraryData lib = dependency.getData().getTarget();
+      if (lib == null || lib.getGroupId() == null || lib.getArtifactId() == null) {
+        continue;
+      }
+      String coordinate = lib.getGroupId() + ":" + lib.getArtifactId();
+      List<String> next = new ArrayList<>(chain);
+      next.add(coordinate);
+      chains.computeIfAbsent(coordinate, key -> new LinkedHashSet<>()).add(List.copyOf(next));
+      collectDependencyChains(dependency, next, chains);
+    }
+  }
+
   private static void processLibraryNodes(
-      Collection<DataNode<LibraryData>> libraryNodes, List<OsvPackage> dependencies) {
+      Collection<DataNode<LibraryData>> libraryNodes,
+      List<OsvPackage> dependencies,
+      Map<String, Set<List<String>>> chains) {
     for (DataNode<LibraryData> libNode : libraryNodes) {
       LibraryData data = libNode.getData();
       String group = data.getGroupId();
@@ -651,8 +688,9 @@ public final class DependencyParser {
 
       if (group != null && artifact != null && version != null) {
         String fullName = group + ":" + artifact;
-        dependencies.add(
-            new OsvPackage(fullName, Ecosystem.MAVEN, version, Set.of(List.of(fullName))));
+        Set<List<String>> dependencyChains =
+            chains.getOrDefault(fullName, Set.of(List.of(fullName)));
+        dependencies.add(new OsvPackage(fullName, Ecosystem.MAVEN, version, dependencyChains));
       }
     }
   }

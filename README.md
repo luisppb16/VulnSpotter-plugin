@@ -24,7 +24,12 @@ without leaving the IDE.
   `us.springett:cvss-calculator`); `database_specific` labels are only a fallback. Vulnerabilities without severity data
   are shown as **Unknown**, never hidden.
 - **Fixed versions** — Remediation versions computed from OSV `ECOSYSTEM`/`SEMVER` ranges with Maven-style version
-  semantics (`5.3.9.RELEASE` == `5.3.9`, `2.0.0-RC1` < `2.0.0`), preferring stable releases in the same major branch.
+  semantics (`5.3.9.RELEASE` == `5.3.9`, `2.0.0-RC1` < `2.0.0`), preferring stable releases in the same branch: each
+  affected version branch is listed with its own fix and the branch containing the installed version is marked, so
+  multi-branch advisories (e.g. a fixed release on both maintenance and current lines) never read as one collapsed range.
+- **Dependency provenance** — Each finding states whether the dependency is declared in the project or pulled in
+  transitively (and through which root), so test-framework or build-tool transitives are never confused with what the
+  manifest declares.
 - **Report export** — Export scan results to **HTML**, **PDF**, **CSV**, **JSON**, **SARIF 2.1.0** and **Markdown**
   from the tool window.
 - **Notifications** — Instant IDE notifications about security findings and scan failures.

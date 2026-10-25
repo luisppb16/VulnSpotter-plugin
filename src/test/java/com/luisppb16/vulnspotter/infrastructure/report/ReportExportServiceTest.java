@@ -71,6 +71,174 @@ class ReportExportServiceTest {
   }
 
   @Test
+  void exportsCsvWithProvenanceColumnAndPerBranchRangeForTransitives() throws Exception {
+    // Given: a transitive dependency whose advisory declares two branches, like the real Jackson 3.
+    OsvVulnerability vuln =
+        VulnFixtures.vuln(
+            "GHSA-test-1234",
+            "jackson-core DoS",
+            null,
+            null,
+            List.of(
+                VulnFixtures.affectedWithWindows(
+                    "tools.jackson.core:jackson-core",
+                    List.of(
+                        VulnFixtures.range(
+                            "ECOSYSTEM",
+                            List.of(
+                                VulnFixtures.event("3.0.0", "3.1.7", null, null),
+                                VulnFixtures.event("3.2.0", "3.2.3", null, null)))))),
+            null,
+            null);
+    ScanResult transitive =
+        VulnFixtures.result(
+            VulnFixtures.pkgWithChains(
+                "tools.jackson.core:jackson-core",
+                "3.1.4",
+                List.of(
+                    List.of(
+                        "com.jetbrains.intellij.platform:test-framework-core",
+                        "tools.jackson.core:jackson-core"))),
+            true,
+            vuln);
+    Path csvPath = tempDir.resolve("transitive.csv");
+
+    // When
+    ReportExportService.exportCsv(List.of(transitive), csvPath);
+
+    // Then: the provenance column fills for known chains and each branch cell carries its fix.
+    String content = Files.readString(csvPath);
+    assertThat(content).contains("Summary,Provenance");
+    assertThat(content)
+        .contains("Branch 3.0.x: >=3.0.0, <3.1.7 (fix: 3.1.7) (install: 3.1.4)")
+        .contains("Branch 3.2.x: >=3.2.0, <3.2.3 (fix: 3.2.3)")
+        .contains("\"Transitive\"");
+  }
+
+  @Test
+  void exportsJsonWithProvenanceAndAffectedBranches() throws Exception {
+    // Given
+    ScanResult transitive =
+        VulnFixtures.result(
+            VulnFixtures.pkgWithChains(
+                "tools.jackson.core:jackson-core",
+                "3.1.4",
+                List.of(
+                    List.of(
+                        "com.jetbrains.intellij.platform:test-framework-core",
+                        "tools.jackson.core:jackson-core"))),
+            true,
+            VulnFixtures.vuln(
+                "GHSA-test-1234",
+                "jackson-core DoS",
+                null,
+                null,
+                List.of(
+                    VulnFixtures.affectedWithWindows(
+                        "tools.jackson.core:jackson-core",
+                        List.of(
+                            VulnFixtures.range(
+                                "ECOSYSTEM",
+                                List.of(
+                                    VulnFixtures.event("3.0.0", "3.1.7", null, null),
+                                    VulnFixtures.event("3.2.0", "3.2.3", null, null)))))),
+                null,
+                null));
+    Path jsonPath = tempDir.resolve("transitive.json");
+
+    // When
+    ReportExportService.exportJsonReport("demo-project", List.of(transitive), jsonPath);
+
+    // Then
+    JsonNode root = MAPPER.readTree(jsonPath.toFile());
+    JsonNode item = root.get("results").get(0);
+    assertThat(item.get("provenance").asText()).isEqualTo("Transitive");
+    assertThat(item.get("transitiveRoots").get(0).asText())
+        .isEqualTo("com.jetbrains.intellij.platform:test-framework-core");
+    JsonNode branch = item.get("vulnerabilities").get(0).get("affectedBranches").get(0);
+    assertThat(branch.get("branch").asText()).isEqualTo("Branch 3.0.x");
+    assertThat(branch.get("fixedVersion").asText()).isEqualTo("3.1.7");
+    assertThat(branch.get("containsInstalledVersion").asBoolean()).isTrue();
+    assertThat(item.get("vulnerabilities").get(0).get("affectedRanges").get(0).asText())
+        .isEqualTo(">=3.0.0, <3.1.7");
+  }
+
+  @Test
+  void exportsSarifWithBranchProperties() throws Exception {
+    // Given
+    ScanResult transitive =
+        VulnFixtures.result(
+            VulnFixtures.pkgWithChains("g:a", "1.5.0", List.of(List.of("root:r", "g:a"))),
+            true,
+            VulnFixtures.vuln(
+                "GHSA-test-1234",
+                "DoS",
+                null,
+                null,
+                List.of(
+                    VulnFixtures.affectedWithWindows(
+                        "g:a",
+                        List.of(
+                            VulnFixtures.range(
+                                "ECOSYSTEM",
+                                List.of(VulnFixtures.event("1.0.0", "2.0.0", null, null)))))),
+                null,
+                null));
+    Path sarifPath = tempDir.resolve("branches.sarif");
+
+    // When
+    ReportExportService.exportSarif(List.of(transitive), sarifPath);
+
+    // Then
+    JsonNode properties =
+        MAPPER
+            .readTree(sarifPath.toFile())
+            .get("runs")
+            .get(0)
+            .get("results")
+            .get(0)
+            .get("properties");
+    assertThat(properties.get("provenance").asText()).isEqualTo("Transitive");
+    assertThat(properties.get("affectedBranches").get(0).get("fixedVersion").asText())
+        .isEqualTo("2.0.0");
+    assertThat(properties.get("affectedRange").asText())
+        .isEqualTo("Branch 1.0.x: >=1.0.0, <2.0.0 (fix: 2.0.0)");
+  }
+
+  @Test
+  void exportsMarkdownWithProvenanceAndBranchSubBullets() throws Exception {
+    // Given
+    ScanResult transitive =
+        VulnFixtures.result(
+            VulnFixtures.pkgWithChains("g:a", "1.5.0", List.of(List.of("root:r", "g:a"))),
+            true,
+            VulnFixtures.vuln(
+                "GHSA-test-1234",
+                "DoS",
+                null,
+                null,
+                List.of(
+                    VulnFixtures.affectedWithWindows(
+                        "g:a",
+                        List.of(
+                            VulnFixtures.range(
+                                "ECOSYSTEM",
+                                List.of(VulnFixtures.event("1.0.0", "2.0.0", null, null)))))),
+                null,
+                null));
+    Path mdPath = tempDir.resolve("branches.md");
+
+    // When
+    ReportExportService.exportMarkdown("demo-project", List.of(transitive), mdPath);
+
+    // Then
+    String md = Files.readString(mdPath);
+    assertThat(md)
+        .contains("Dependency provenance: Transitive dependency (via root:r)")
+        .contains("- Branch 1.0.x: >=1.0.0, <2.0.0 (fix: 2.0.0) ← installed (1.5.0)");
+  }
+
+  @Test
   void exportsHtmlAndPdfFiles() throws Exception {
     String html = "<html><body><h1>Report</h1><p>content</p></body></html>";
 
@@ -99,7 +267,7 @@ class ReportExportServiceTest {
     assertThat(lines.get(0))
         .isEqualTo(
             "Package,Version,Ecosystem,Vulnerability ID,CVE Aliases,Severity,CVSS,"
-                + "Affected Range,Recommended Fix,Summary");
+                + "Affected Range,Recommended Fix,Summary,Provenance");
     // 1 header + 1 vulnerable row + 1 clean row.
     assertThat(lines).hasSize(3);
     assertThat(lines.get(1))
