@@ -7,7 +7,6 @@
 
 package com.luisppb16.vulnspotter.infrastructure.osv;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.util.io.HttpRequests;
 import com.luisppb16.vulnspotter.domain.model.OsvBatchQuery;
@@ -18,6 +17,7 @@ import com.luisppb16.vulnspotter.domain.model.OsvResponse;
 import com.luisppb16.vulnspotter.domain.model.OsvVulnerability;
 import com.luisppb16.vulnspotter.domain.model.PackageKey;
 import com.luisppb16.vulnspotter.settings.VulnSpotterSettings;
+import com.luisppb16.vulnspotter.util.Json;
 import java.io.IOException;
 import java.io.Serial;
 import java.net.URLEncoder;
@@ -36,6 +36,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.stream.IntStream;
 
 /**
  * Client for interacting with the OSV.dev API to check for vulnerabilities. Uses IntelliJ's
@@ -70,7 +71,6 @@ public class OsvClient {
   private static final int MAX_ATTEMPTS = 3;
   private static final long RETRY_BACKOFF_MS = 500;
 
-  private final ObjectMapper objectMapper;
   private final ExecutorService executorService;
   private final ConcurrentHashMap<PackageKey, CacheEntry<OsvResponse>> packageCache =
       new ConcurrentHashMap<>();
@@ -88,7 +88,6 @@ public class OsvClient {
 
   public OsvClient(ExecutorService executorService) {
     this.executorService = executorService;
-    this.objectMapper = new ObjectMapper();
   }
 
   private static OsvResponse mergeVulns(OsvResponse accumulated, OsvResponse page) {
@@ -155,10 +154,7 @@ public class OsvClient {
   }
 
   private static Instant cacheExpiration() {
-    int cacheMinutes =
-        VulnSpotterSettings.getInstance() != null
-            ? VulnSpotterSettings.getInstance().getCacheDurationMinutes()
-            : 60;
+    int cacheMinutes = VulnSpotterSettings.getInstance().getCacheDurationMinutes();
     return Instant.now().plus(Duration.ofMinutes(cacheMinutes));
   }
 
@@ -284,41 +280,38 @@ public class OsvClient {
     List<OsvResponse> results = new ArrayList<>(Collections.nCopies(queries.size(), null));
 
     for (int start = 0; start < queries.size(); start += MAX_BATCH_SIZE) {
-      int end = Math.min(start + MAX_BATCH_SIZE, queries.size());
-      List<OsvQuery> chunk = new ArrayList<>(queries.subList(start, end));
-      List<Integer> chunkIndices = new ArrayList<>();
-      for (int i = start; i < end; i++) {
-        chunkIndices.add(i);
-      }
+      List<PendingQuery> pending =
+          IntStream.rangeClosed(start, Math.min(start + MAX_BATCH_SIZE, queries.size()) - 1)
+              .mapToObj(i -> i)
+              .map(i -> new PendingQuery(queries.get(i), i))
+              .toList();
 
-      for (int page = 0; page < MAX_PAGES && !chunk.isEmpty(); page++) {
-        OsvBatchResponse batch = postBatch(chunk);
+      for (int page = 0; page < MAX_PAGES && !pending.isEmpty(); page++) {
+        OsvBatchResponse batch = postBatch(pending.stream().map(PendingQuery::query).toList());
         List<OsvResponse> batchResults = batch.results();
 
-        List<OsvQuery> nextChunk = new ArrayList<>();
-        List<Integer> nextIndices = new ArrayList<>();
-
-        for (int k = 0; k < chunk.size(); k++) {
+        List<PendingQuery> nextPending = new ArrayList<>();
+        for (int k = 0; k < pending.size(); k++) {
           OsvResponse pageResult = k < batchResults.size() ? batchResults.get(k) : null;
-          int globalIndex = chunkIndices.get(k);
+          int globalIndex = pending.get(k).index();
           results.set(globalIndex, mergeVulns(results.get(globalIndex), pageResult));
 
           if (pageResult != null
               && pageResult.nextPageToken() != null
               && !pageResult.nextPageToken().isBlank()) {
-            nextChunk.add(chunk.get(k).withPageToken(pageResult.nextPageToken()));
-            nextIndices.add(globalIndex);
+            nextPending.add(
+                new PendingQuery(
+                    pending.get(k).query().withPageToken(pageResult.nextPageToken()), globalIndex));
           }
         }
-        chunk = nextChunk;
-        chunkIndices = nextIndices;
+        pending = nextPending;
       }
-      if (!chunk.isEmpty()) {
+      if (!pending.isEmpty()) {
         LOG.warn(
             "OSV pagination cap reached ("
                 + MAX_PAGES
                 + " pages) for "
-                + chunk.size()
+                + pending.size()
                 + " package(s); remaining vulnerabilities may not be reported. "
                 + "Re-scan to fetch more.");
       }
@@ -326,14 +319,17 @@ public class OsvClient {
     return results;
   }
 
+  /** A queued follow-up page: the next-token query and its position in the batch. */
+  private record PendingQuery(OsvQuery query, int index) {}
+
   private OsvBatchResponse postBatch(List<OsvQuery> queries) {
     try {
-      String requestBody = objectMapper.writeValueAsString(new OsvBatchQuery(queries));
+      String requestBody = Json.MAPPER.writeValueAsString(new OsvBatchQuery(queries));
       String responseBody = postWithRetry(ProjectConstants.OSV_API_BATCH_URL, requestBody);
       if (responseBody == null || responseBody.isEmpty()) {
         throw new OsvClientException("Empty response from OSV batch API", null);
       }
-      return objectMapper.readValue(responseBody, OsvBatchResponse.class);
+      return Json.MAPPER.readValue(responseBody, OsvBatchResponse.class);
     } catch (IOException e) {
       throw new OsvClientException("OSV batch query failed", e);
     }
@@ -387,7 +383,7 @@ public class OsvClient {
     String url = ProjectConstants.OSV_API_VULNS_URL + URLEncoder.encode(id, StandardCharsets.UTF_8);
     try {
       String body = getWithRetry(url);
-      return objectMapper.readValue(body, OsvVulnerability.class);
+      return Json.MAPPER.readValue(body, OsvVulnerability.class);
     } catch (IOException e) {
       LOG.warn("Failed to hydrate OSV record " + id + "; falling back to minimal data", e);
       return null;

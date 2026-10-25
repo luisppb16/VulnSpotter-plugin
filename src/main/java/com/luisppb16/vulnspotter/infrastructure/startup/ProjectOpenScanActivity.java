@@ -53,7 +53,7 @@ public final class ProjectOpenScanActivity implements ProjectActivity {
   public Object execute(
       @NotNull Project project, @NotNull Continuation<? super Unit> continuation) {
     VulnSpotterSettings settings = VulnSpotterSettings.getInstance();
-    if (settings == null || !settings.isAnalyzeOnProjectOpen() || project.isDisposed()) {
+    if (!settings.isAnalyzeOnProjectOpen() || project.isDisposed()) {
       return Unit.INSTANCE;
     }
     VulnerabilityScannerService scanner = VulnerabilityScannerService.getInstance(project);

@@ -14,16 +14,18 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mockStatic;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.when;
 
-import com.google.common.util.concurrent.MoreExecutors;
 import com.intellij.util.io.HttpRequests;
 import com.intellij.util.io.RequestBuilder;
 import com.luisppb16.vulnspotter.domain.model.OsvBatchResponse;
 import com.luisppb16.vulnspotter.domain.model.OsvPackage;
 import com.luisppb16.vulnspotter.domain.model.OsvVulnerability;
+import com.luisppb16.vulnspotter.settings.VulnSpotterSettings;
+import com.luisppb16.vulnspotter.testsupport.DirectExecutorService;
 import java.io.IOException;
 import java.util.List;
 import java.util.concurrent.ExecutorService;
@@ -77,17 +79,27 @@ class OsvClientRevalidationTest {
         "GHSA-1", "s", null, null, null, null, modified, null, null, null, null);
   }
 
+  private MockedStatic<VulnSpotterSettings> settingsMock;
+
   @BeforeEach
   void setUp() {
     // Inline executor: the OsvClient pipeline (batch POST -> hydration GET) runs on the test
     // thread, which is where the Mockito static stubbing was configured and verified.
-    executorService = MoreExecutors.newDirectExecutorService();
+    executorService = new DirectExecutorService();
     client = new OsvClient(executorService);
+
+    VulnSpotterSettings settings = mock(VulnSpotterSettings.class);
+    lenient().when(settings.getCacheDurationMinutes()).thenReturn(60);
+    settingsMock = mockStatic(VulnSpotterSettings.class);
+    settingsMock.when(VulnSpotterSettings::getInstance).thenReturn(settings);
   }
 
   @AfterEach
   void tearDown() {
     executorService.shutdownNow();
+    if (settingsMock != null) {
+      settingsMock.close();
+    }
     if (httpRequests != null) {
       httpRequests.close();
     }

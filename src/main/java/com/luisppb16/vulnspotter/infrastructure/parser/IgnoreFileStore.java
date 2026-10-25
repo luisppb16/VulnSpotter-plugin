@@ -14,10 +14,9 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardOpenOption;
-import java.util.Collections;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 /**
  * Owns the {@code .vulnspotterignore} file: its location and its raw line format (one pattern per
@@ -46,22 +45,17 @@ public final class IgnoreFileStore {
   public static Set<String> readPatterns(Project project) {
     Path ignoreFilePath = ignoreFilePath(project);
     if (ignoreFilePath == null || !Files.exists(ignoreFilePath)) {
-      return Collections.emptySet();
+      return Set.of();
     }
 
     try {
-      List<String> lines = Files.readAllLines(ignoreFilePath);
-      Set<String> ignored = new HashSet<>();
-      for (String line : lines) {
-        String trimmed = line.trim();
-        if (!trimmed.isEmpty() && !trimmed.startsWith("#")) {
-          ignored.add(trimmed);
-        }
-      }
-      return ignored;
+      return Files.readAllLines(ignoreFilePath).stream()
+          .map(String::trim)
+          .filter(line -> !line.isEmpty() && !line.startsWith("#"))
+          .collect(Collectors.toUnmodifiableSet());
     } catch (IOException e) {
       LOG.warn("Failed to read .vulnspotterignore; ignore rules are not being applied", e);
-      return Collections.emptySet();
+      return Set.of();
     }
   }
 

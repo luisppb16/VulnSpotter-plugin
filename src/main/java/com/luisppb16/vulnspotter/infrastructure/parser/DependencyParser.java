@@ -30,6 +30,7 @@ import com.intellij.openapi.vfs.VirtualFile;
 import com.luisppb16.vulnspotter.domain.model.Ecosystem;
 import com.luisppb16.vulnspotter.domain.model.OsvPackage;
 import com.luisppb16.vulnspotter.domain.model.PackageKey;
+import com.luisppb16.vulnspotter.util.Json;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -76,7 +77,7 @@ public final class DependencyParser {
   // Matches a package-lock v2/v3 key like "node_modules/foo" or
   // "node_modules/foo/node_modules/bar".
   private static final Pattern NPM_LOCK_KEY_PATTERN = Pattern.compile("^node_modules/(.+)$");
-  private static final ObjectMapper MAPPER = new ObjectMapper();
+  private static final ObjectMapper MAPPER = Json.MAPPER;
 
   private DependencyParser() {
     throw new UnsupportedOperationException("Utility class");

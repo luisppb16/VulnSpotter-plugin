@@ -57,11 +57,9 @@ public final class VulnSpotterNotifications {
     if (project == null) {
       return;
     }
-    NotificationGroup group = NotificationGroupManager.getInstance().getNotificationGroup(GROUP_ID);
-    if (group == null) {
-      throw new IllegalStateException(
-          "Notification group \"" + GROUP_ID + "\" is not registered in plugin.xml");
-    }
-    group.createNotification(title, content, type).notify(project);
+    NotificationGroupManager.getInstance()
+        .getNotificationGroup(GROUP_ID)
+        .createNotification(title, content, type)
+        .notify(project);
   }
 }

@@ -7,18 +7,18 @@
 
 package com.luisppb16.vulnspotter.settings;
 
-import com.intellij.openapi.application.Application;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.components.PersistentStateComponent;
+import com.intellij.openapi.components.Service;
 import com.intellij.openapi.components.State;
 import com.intellij.openapi.components.Storage;
 import com.intellij.util.xmlb.XmlSerializerUtil;
 import java.util.ArrayList;
 import java.util.List;
 import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
 
 @State(name = "VulnSpotterSettings", storages = @Storage("vulnSpotterSettings.xml"))
+@Service(Service.Level.APP)
 public class VulnSpotterSettings implements PersistentStateComponent<VulnSpotterSettings> {
 
   private int cacheDurationMinutes = 60;
@@ -28,8 +28,7 @@ public class VulnSpotterSettings implements PersistentStateComponent<VulnSpotter
   private boolean analyzeOnProjectOpen = true;
 
   public static VulnSpotterSettings getInstance() {
-    Application app = ApplicationManager.getApplication();
-    return app != null ? app.getService(VulnSpotterSettings.class) : null;
+    return ApplicationManager.getApplication().getService(VulnSpotterSettings.class);
   }
 
   public int getCacheDurationMinutes() {
@@ -72,7 +71,7 @@ public class VulnSpotterSettings implements PersistentStateComponent<VulnSpotter
     this.analyzeOnProjectOpen = analyzeOnProjectOpen;
   }
 
-  @Nullable
+  @NotNull
   @Override
   public VulnSpotterSettings getState() {
     return this;

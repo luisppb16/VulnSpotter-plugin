@@ -58,9 +58,8 @@
     <depends optional="true" config-file="vulnspotter-jcef.xml">com.intellij.modules.jcef</depends>
 
     <extensions defaultExtensionNs="com.intellij">
-        <applicationService serviceImplementation="com.luisppb16.vulnspotter.settings.VulnSpotterSettings"/>
-
-        <postStartupActivity implementation="com.luisppb16.vulnspotter.infrastructure.startup.ProjectOpenScanActivity"/>
+        <backgroundPostStartupActivity
+                implementation="com.luisppb16.vulnspotter.infrastructure.startup.ProjectOpenScanActivity"/>
 
         <applicationConfigurable parentId="tools"
                                  id="vulnspotter.settings"

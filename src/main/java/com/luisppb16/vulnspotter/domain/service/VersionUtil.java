@@ -11,6 +11,7 @@ import java.math.BigInteger;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.regex.Pattern;
 
 /**
  * Version comparison following Maven's {@code ComparableVersion} semantics: pre-release qualifiers
@@ -97,12 +98,14 @@ public final class VersionUtil {
     return false;
   }
 
+  private static final Pattern NON_VERSION_CHARS = Pattern.compile("[^0-9.]");
+
   private static boolean isSameMajor(String v1, String v2) {
     return getMajor(v1).equals(getMajor(v2));
   }
 
   private static String getMajor(String version) {
-    String clean = version.replaceAll("[^0-9.]", "");
+    String clean = NON_VERSION_CHARS.matcher(version).replaceAll("");
     int idx = clean.indexOf('.');
     return idx == -1 ? clean : clean.substring(0, idx);
   }

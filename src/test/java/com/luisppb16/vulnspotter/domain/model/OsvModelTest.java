@@ -11,13 +11,14 @@ import static org.junit.jupiter.api.Assertions.*;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.luisppb16.vulnspotter.util.Json;
 import java.util.List;
 import java.util.Set;
 import org.junit.jupiter.api.Test;
 
 class OsvModelTest {
 
-  private final ObjectMapper objectMapper = new ObjectMapper();
+  private final ObjectMapper objectMapper = Json.MAPPER;
 
   @Test
   void testOsvPackage() {

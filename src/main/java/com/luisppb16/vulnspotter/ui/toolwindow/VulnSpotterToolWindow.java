@@ -32,6 +32,7 @@ import com.intellij.ui.awt.RelativePoint;
 import com.intellij.ui.components.JBCheckBox;
 import com.intellij.ui.components.JBScrollPane;
 import com.intellij.ui.table.JBTable;
+import com.intellij.util.ExceptionUtil;
 import com.intellij.util.IconUtil;
 import com.intellij.util.ui.JBUI;
 import com.intellij.util.ui.UIUtil;
@@ -67,7 +68,7 @@ import java.util.Vector;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
-import java.util.concurrent.ConcurrentHashMap;
+
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -117,6 +118,7 @@ public final class VulnSpotterToolWindow implements Disposable {
   private final CardLayout cardLayout = new CardLayout();
   private final JPanel mainPanel;
   private final JBTable resultsTable;
+  private final TableRowSorter<DefaultTableModel> resultsSorter;
   private final DefaultTableModel tableModel;
   private final DetailsPanel detailsPanel;
   private final Project project;
@@ -140,7 +142,7 @@ public final class VulnSpotterToolWindow implements Disposable {
   private final Map<String, Icon> severityIcons = new HashMap<>();
 
   /** Prebuilt light/dark document shells; only the body varies between renders. */
-  private final Map<Boolean, String> htmlShells = new ConcurrentHashMap<>();
+  private final Map<Boolean, String> htmlShells = new HashMap<>();
 
   private volatile CompletableFuture<List<VulnerabilityScannerService.ScanResult>> activeScan;
 
@@ -150,7 +152,7 @@ public final class VulnSpotterToolWindow implements Disposable {
 
     DetailsPanelFactory factory =
         ApplicationManager.getApplication().getService(DetailsPanelFactory.class);
-    DetailsPanel panel = factory != null ? factory.create() : null;
+    DetailsPanel panel = factory.create();
     this.detailsPanel = panel != null ? panel : new SwingDetailsPanel();
     Disposer.register(this, detailsPanel);
 
@@ -219,12 +221,12 @@ public final class VulnSpotterToolWindow implements Disposable {
     resultsTable = new JBTable(tableModel);
     resultsTable.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
 
-    TableRowSorter<DefaultTableModel> sorter = new TableRowSorter<>(tableModel);
-    sorter.setComparator(
+    resultsSorter = new TableRowSorter<>(tableModel);
+    resultsSorter.setComparator(
         0, Comparator.comparingInt(sev -> SeverityAnalyzer.severityToLevel((String) sev)));
-    resultsTable.setRowSorter(sorter);
+    resultsTable.setRowSorter(resultsSorter);
     // Most severe first, then alphabetically by dependency
-    sorter.setSortKeys(
+    resultsSorter.setSortKeys(
         List.of(
             new RowSorter.SortKey(0, SortOrder.DESCENDING),
             new RowSorter.SortKey(1, SortOrder.ASCENDING)));
@@ -283,11 +285,8 @@ public final class VulnSpotterToolWindow implements Disposable {
                   severityIcons.clear();
                   htmlShells.clear();
                   Optional<VulnerabilityScannerService.ScanResult> selected = selectedResult();
-                  if (selected.isPresent()) {
-                    showDetails(selected.get());
-                  } else {
-                    loadDetailsHtml(generateHtml(EMPTY_DETAILS_HTML));
-                  }
+                  selected.ifPresentOrElse(
+                      this::showDetails, () -> loadDetailsHtml(generateHtml(EMPTY_DETAILS_HTML)));
                 });
   }
 
@@ -306,9 +305,7 @@ public final class VulnSpotterToolWindow implements Disposable {
     StringBuilder blob = new StringBuilder(result.pkg().name().toLowerCase(Locale.ROOT));
     for (OsvVulnerability vuln : result.vulnerabilities()) {
       appendSearchTerm(blob, vuln.id());
-      if (vuln.aliases() != null) {
-        vuln.aliases().forEach(alias -> appendSearchTerm(blob, alias));
-      }
+      vuln.aliases().forEach(alias -> appendSearchTerm(blob, alias));
     }
     return blob.toString();
   }
@@ -601,15 +598,11 @@ public final class VulnSpotterToolWindow implements Disposable {
   }
 
   private void applyFilters() {
-    @SuppressWarnings("unchecked")
-    TableRowSorter<DefaultTableModel> sorter =
-        (TableRowSorter<DefaultTableModel>) resultsTable.getRowSorter();
-
     String searchText = searchField.getText().toLowerCase(Locale.ROOT);
     boolean vulnerableOnly = vulnerableOnlyCheckbox.isSelected();
     boolean hasSearch = !searchText.isEmpty();
 
-    sorter.setRowFilter(
+    resultsSorter.setRowFilter(
         new RowFilter<>() {
           @Override
           public boolean include(Entry<? extends DefaultTableModel, ? extends Integer> entry) {
@@ -768,8 +761,7 @@ public final class VulnSpotterToolWindow implements Disposable {
   private void onScanFailed(Throwable ex) {
     activeScan = null;
 
-    Throwable cause =
-        ex instanceof CompletionException && ex.getCause() != null ? ex.getCause() : ex;
+    Throwable cause = ExceptionUtil.unwrapException(ex, CompletionException.class);
     if (cause instanceof CancellationException _) {
       ScanUiPhase.CANCELLED.apply(this, "Scan cancelled", false);
       return;
@@ -780,8 +772,7 @@ public final class VulnSpotterToolWindow implements Disposable {
               "The scan timed out after "
                   + SCAN_TIMEOUT_SECONDS
                   + "s. Try again or narrow the project.";
-          default ->
-              cause.getMessage() != null ? cause.getMessage() : cause.getClass().getSimpleName();
+          default -> ExceptionUtil.getNonEmptyMessage(cause, cause.getClass().getSimpleName());
         };
     ScanUiPhase.FAILED.apply(this, "Scan failed: " + message, false);
     VulnSpotterNotifications.notifyError(
@@ -863,9 +854,7 @@ public final class VulnSpotterToolWindow implements Disposable {
                     .invokeLater(
                         () -> {
                           String message =
-                              ex.getMessage() != null
-                                  ? ex.getMessage()
-                                  : ex.getClass().getSimpleName();
+                              ExceptionUtil.getNonEmptyMessage(ex, ex.getClass().getSimpleName());
                           statusLabel.setText("Export failed: " + message);
                           VulnSpotterNotifications.notifyError(
                               project, "VulnSpotter export failed", message);
@@ -962,7 +951,7 @@ public final class VulnSpotterToolWindow implements Disposable {
   }
 
   private boolean isDirectDependency(Set<List<String>> chains, Set<String> roots) {
-    if (chains == null || chains.isEmpty()) {
+    if (chains.isEmpty()) {
       return true;
     }
     // Compute roots explicitly: a stream peek() side-effect is not guaranteed to run for every
@@ -986,9 +975,7 @@ public final class VulnSpotterToolWindow implements Disposable {
           .append("</b> to version <b>")
           .append(HtmlEscaper.escape(fixedVerStr))
           .append("</b>");
-      sb.append(" <button class='copy-btn' onclick=\"copyToClipboard('")
-          .append(HtmlEscaper.escape(HtmlEscaper.escapeJsSingleQuoted(fixedVerStr)))
-          .append("')\">Copy</button></p>");
+      sb.append(VulnerabilityCardComposer.copyButton(fixedVerStr)).append("</p>");
     } else {
       sb.append("<p>No fixed version available for <b>")
           .append(HtmlEscaper.escape(result.pkg().name()))
@@ -1044,7 +1031,7 @@ public final class VulnSpotterToolWindow implements Disposable {
   private void appendDependencyChains(
       StringBuilder sb, VulnerabilityScannerService.ScanResult result) {
     Set<List<String>> chains = result.pkg().dependencyChains();
-    if (chains != null && !chains.isEmpty()) {
+    if (!chains.isEmpty()) {
       int pathIndex = 1;
       for (List<String> chain : chains) {
         if (chains.size() > 1) {

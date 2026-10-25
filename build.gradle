@@ -12,7 +12,7 @@ plugins {
 }
 
 group = 'com.luisppb16'
-version = '1.0.5-alpha'
+version = '1.0.6'
 
 repositories {
     mavenCentral()
@@ -23,7 +23,7 @@ repositories {
 
 dependencies {
     // JSON - Jackson
-    implementation 'com.fasterxml.jackson.core:jackson-databind:2.21.7'
+    implementation 'com.fasterxml.jackson.core:jackson-databind:2.22.4'
 
 
     // CVSS base-score calculation from OSV severity vectors (v2/v3/v3.1/v4)
@@ -36,18 +36,18 @@ dependencies {
     // JUnit 4 is kept on the test classpath because the IntelliJ Platform test framework
     // (used via the bundled test infrastructure) references org.junit.rules.TestRule at runtime.
     testImplementation 'junit:junit:4.13.2'
-    testImplementation 'org.junit.jupiter:junit-jupiter:5.14.4'
-    testImplementation 'org.mockito:mockito-core:5.23.0'
-    testImplementation 'org.mockito:mockito-junit-jupiter:5.23.0'
+    testImplementation 'org.junit.jupiter:junit-jupiter:6.1.3'
+    testImplementation 'org.mockito:mockito-core:5.24.0'
+    testImplementation 'org.mockito:mockito-junit-jupiter:5.24.0'
     testImplementation 'org.assertj:assertj-core:3.27.7'
-    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher:6.1.3'
 
     constraints {
-        implementation('org.apache.pdfbox:pdfbox:2.0.31') {
+        implementation('org.apache.pdfbox:pdfbox:2.0.37') {
             because 'openhtmltopdf 1.0.10 pulls pdfbox 2.0.24 which has known CVEs'
         }
-        implementation('org.apache.pdfbox:xmpbox:2.0.31') {
-            because 'keep the whole pdfbox family aligned with the pdfbox 2.0.31 upgrade'
+        implementation('org.apache.pdfbox:xmpbox:2.0.37') {
+            because 'keep the whole pdfbox family aligned with the pdfbox 2.0.37 upgrade'
         }
         testImplementation('org.apache.commons:commons-compress:1.28.0') {
             because 'avoid CVEs in the transitive test classpath'
@@ -61,12 +61,19 @@ dependencies {
         bundledPlugin 'org.intellij.groovy'
         bundledModule 'intellij.platform.ui.jcef'
         bundledModule 'intellij.libraries.jcef'
+        bundledModule 'com.intellij.modules.xml'
     }
 }
 
 java {
     toolchain {
         languageVersion = JavaLanguageVersion.of(25)
+    }
+}
+
+tasks.named('processResources') {
+    filesMatching('vulnspotter/plugin-version.properties') {
+        expand(version: project.version)
     }
 }
 

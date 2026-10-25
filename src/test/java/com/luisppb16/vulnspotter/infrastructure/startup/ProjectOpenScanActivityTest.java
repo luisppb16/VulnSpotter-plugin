@@ -95,20 +95,6 @@ class ProjectOpenScanActivityTest {
   }
 
   @Test
-  @DisplayName("execute skips the scan when the settings service is not available")
-  void executeSkipsScanWhenSettingsServiceMissing() {
-    // Given: a headless application without the settings service.
-    settingsMock.when(VulnSpotterSettings::getInstance).thenReturn(null);
-
-    // When: the project-open activity runs.
-    Object result = activity.execute(project, continuation);
-
-    // Then: the scan is never triggered.
-    assertThat(result).isEqualTo(Unit.INSTANCE);
-    scannerMock.verify(() -> VulnerabilityScannerService.getInstance(project), never());
-  }
-
-  @Test
   @DisplayName("execute skips the scan when analyze-on-project-open is disabled")
   void executeSkipsScanWhenDisabled() {
     // Given: the toggle is off.

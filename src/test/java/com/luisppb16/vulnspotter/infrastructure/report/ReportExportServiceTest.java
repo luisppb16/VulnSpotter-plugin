@@ -16,6 +16,7 @@ import com.luisppb16.vulnspotter.application.service.VulnerabilityScannerService
 import com.luisppb16.vulnspotter.domain.model.OsvPackage;
 import com.luisppb16.vulnspotter.domain.model.OsvVulnerability;
 import com.luisppb16.vulnspotter.testsupport.VulnFixtures;
+import com.luisppb16.vulnspotter.util.Json;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Collections;
@@ -26,7 +27,7 @@ import org.junit.jupiter.api.io.TempDir;
 
 class ReportExportServiceTest {
 
-  private static final ObjectMapper MAPPER = new ObjectMapper();
+  private static final ObjectMapper MAPPER = Json.MAPPER;
 
   @TempDir Path tempDir;
 

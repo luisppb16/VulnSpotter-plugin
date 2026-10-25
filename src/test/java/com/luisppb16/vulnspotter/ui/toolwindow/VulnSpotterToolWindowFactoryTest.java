@@ -75,6 +75,8 @@ class VulnSpotterToolWindowFactoryTest {
         .when(() -> VulnerabilityScannerService.getInstance(project))
         .thenReturn(scannerService);
     applicationManagerMock.when(ApplicationManager::getApplication).thenReturn(application);
+    when(application.getService(DetailsPanelFactory.class))
+        .thenReturn(mock(DetailsPanelFactory.class));
     // The deferred runnable subscribes to the application message bus; stub it so the factory can
     // build the panel without a running application.
     when(application.getMessageBus()).thenReturn(messageBus);

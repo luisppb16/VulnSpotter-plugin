@@ -21,6 +21,7 @@ import com.intellij.util.messages.MessageBus;
 import com.intellij.util.messages.MessageBusConnection;
 import com.luisppb16.vulnspotter.application.service.VulnerabilityScannerService;
 import com.luisppb16.vulnspotter.domain.model.OsvPackage;
+import com.luisppb16.vulnspotter.settings.VulnSpotterSettings;
 import com.luisppb16.vulnspotter.ui.notification.VulnSpotterNotifications;
 import java.awt.Component;
 import java.util.List;
@@ -68,6 +69,14 @@ class VulnSpotterToolWindowTest {
     // the tool window can be built without a running application.
     when(application.getMessageBus()).thenReturn(messageBus);
     when(messageBus.connect(any(Disposable.class))).thenReturn(messageBusConnection);
+
+    VulnSpotterSettings settings = mock(VulnSpotterSettings.class);
+    lenient().when(settings.getIgnoredCves()).thenReturn(List.of());
+    lenient().when(settings.getMinimumSeverity()).thenReturn("SAFE");
+    lenient().when(settings.getCacheDurationMinutes()).thenReturn(60);
+    when(application.getService(VulnSpotterSettings.class)).thenReturn(settings);
+    when(application.getService(DetailsPanelFactory.class))
+        .thenReturn(mock(DetailsPanelFactory.class));
     modalityStateMock.when(ModalityState::defaultModalityState).thenReturn(modalityState);
 
     // Mock invokeLater to run immediately (both overloads: the scan callbacks use the 2-arg one)

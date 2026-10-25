@@ -16,6 +16,7 @@ import com.luisppb16.vulnspotter.domain.model.OsvVulnerability;
 import com.luisppb16.vulnspotter.domain.service.FixedVersionResolver;
 import com.luisppb16.vulnspotter.domain.service.SeverityAnalyzer;
 import com.luisppb16.vulnspotter.infrastructure.osv.ProjectConstants;
+import com.luisppb16.vulnspotter.util.Json;
 import com.openhtmltopdf.pdfboxout.PdfRendererBuilder;
 import java.io.IOException;
 import java.io.OutputStream;
@@ -30,7 +31,7 @@ import java.util.stream.Collectors;
 /** Exports vulnerability reports into HTML, PDF, CSV, JSON, SARIF and Markdown files. */
 public final class ReportExportService {
 
-  private static final ObjectMapper MAPPER = new ObjectMapper();
+  private static final ObjectMapper MAPPER = Json.MAPPER;
   private static final String TOOL_INFO_URI = "https://github.com/luisppb16";
   private static final String TOOL_VERSION = VulnerabilityReportBuilder.TOOL_VERSION;
 
@@ -97,7 +98,7 @@ public final class ReportExportService {
       for (OsvVulnerability vuln : sr.vulnerabilities()) {
         ObjectNode v = vulnsArr.addObject();
         v.put("id", vuln.id());
-        if (vuln.aliases() != null && !vuln.aliases().isEmpty()) {
+        if (!vuln.aliases().isEmpty()) {
           ArrayNode aliases = v.putArray("aliases");
           vuln.aliases().forEach(aliases::add);
         }
@@ -118,7 +119,7 @@ public final class ReportExportService {
         v.put(
             "fixedVersion",
             FixedVersionResolver.resolve(vuln, sr.pkg().name(), sr.pkg().version()));
-        if (vuln.references() != null && !vuln.references().isEmpty()) {
+        if (!vuln.references().isEmpty()) {
           ArrayNode refs = v.putArray("references");
           vuln.references().stream()
               .map(OsvVulnerability.Reference::url)
@@ -284,7 +285,7 @@ public final class ReportExportService {
         if (!ranges.isEmpty()) {
           properties.put("affectedRange", String.join(", ", ranges));
         }
-        if (vuln.aliases() != null && !vuln.aliases().isEmpty()) {
+        if (!vuln.aliases().isEmpty()) {
           ArrayNode aliases = properties.putArray("aliases");
           vuln.aliases().forEach(aliases::add);
         }
