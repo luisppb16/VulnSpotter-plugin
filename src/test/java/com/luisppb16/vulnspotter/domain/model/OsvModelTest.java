@@ -48,33 +48,33 @@ class OsvModelTest {
   void testOsvVulnerabilityDeserialization() throws JsonProcessingException {
     String json =
         """
+        {
+          "id": "GHSA-123",
+          "summary": "Summary",
+          "details": "Details",
+          "severity": [
             {
-              "id": "GHSA-123",
-              "summary": "Summary",
-              "details": "Details",
-              "severity": [
+              "type": "CVSS_V3",
+              "score": "9.8"
+            }
+          ],
+          "affected": [
+            {
+              "ranges": [
                 {
-                  "type": "CVSS_V3",
-                  "score": "9.8"
-                }
-              ],
-              "affected": [
-                {
-                  "ranges": [
+                  "type": "ECOSYSTEM",
+                  "events": [
                     {
-                      "type": "ECOSYSTEM",
-                      "events": [
-                        {
-                          "introduced": "0",
-                          "fixed": "1.0.1"
-                        }
-                      ]
+                      "introduced": "0",
+                      "fixed": "1.0.1"
                     }
                   ]
                 }
               ]
             }
-            """;
+          ]
+        }
+        """;
 
     OsvVulnerability vuln = objectMapper.readValue(json, OsvVulnerability.class);
     assertEquals("GHSA-123", vuln.id());
@@ -91,14 +91,14 @@ class OsvModelTest {
   void testOsvResponseDeserialization() throws JsonProcessingException {
     String json =
         """
+        {
+          "vulns": [
             {
-              "vulns": [
-                {
-                  "id": "GHSA-123"
-                }
-              ]
+              "id": "GHSA-123"
             }
-            """;
+          ]
+        }
+        """;
     OsvResponse response = objectMapper.readValue(json, OsvResponse.class);
     assertNotNull(response.vulns());
     assertEquals(1, response.vulns().size());

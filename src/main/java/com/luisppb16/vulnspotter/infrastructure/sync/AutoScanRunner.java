@@ -65,34 +65,31 @@ final class AutoScanRunner {
       Project project, VulnerabilityScannerService scanner, boolean allowOneRetry) {
     scanner
         .scanDependencies()
-        .thenAccept(
-            results -> {
-              // Publication (and annotation refresh) is owned by the service; a late completion
-              // of a superseded scan is dropped there too. This trigger only counts and notifies.
-              long vulnerableCount =
-                  VulnerabilityScannerService.ScanSummary.of(results).vulnerable();
-              if (vulnerableCount > 0 && !project.isDisposed()) {
-                VulnSpotterNotifications.notifyWarning(
-                    project,
-                    VulnSpotterNotifications.TITLE,
-                    "Auto-scan found vulnerabilities in "
-                        + vulnerableCount
-                        + (vulnerableCount == 1 ? " dependency." : " dependencies.")
-                        + " Open the VulnSpotter tool window for details.");
-              }
-            })
-        .exceptionally(
-            ex -> {
-              if (allowOneRetry && !project.isDisposed()) {
-                LOG.warn(
-                    "VulnSpotter auto-scan did not complete (borrowed scan cancelled or timed out);"
-                        + " rerunning it once",
-                    ex);
-                scanAndNotify(project, scanner, false);
-                return null;
-              }
-              LOG.warn("VulnSpotter auto-scan failed", ex);
-              return null;
-            });
+        .thenAccept(results -> {
+          // Publication (and annotation refresh) is owned by the service; a late completion
+          // of a superseded scan is dropped there too. This trigger only counts and notifies.
+          long vulnerableCount = VulnerabilityScannerService.ScanSummary.of(results).vulnerable();
+          if (vulnerableCount > 0 && !project.isDisposed()) {
+            VulnSpotterNotifications.notifyWarning(
+                project,
+                VulnSpotterNotifications.TITLE,
+                "Auto-scan found vulnerabilities in "
+                    + vulnerableCount
+                    + (vulnerableCount == 1 ? " dependency." : " dependencies.")
+                    + " Open the VulnSpotter tool window for details.");
+          }
+        })
+        .exceptionally(ex -> {
+          if (allowOneRetry && !project.isDisposed()) {
+            LOG.warn(
+                "VulnSpotter auto-scan did not complete (borrowed scan cancelled or timed out);"
+                    + " rerunning it once",
+                ex);
+            scanAndNotify(project, scanner, false);
+            return null;
+          }
+          LOG.warn("VulnSpotter auto-scan failed", ex);
+          return null;
+        });
   }
 }

@@ -5,14 +5,18 @@
  * *****************************************************************************
  */
 
+import org.jetbrains.intellij.platform.gradle.tasks.VerifyPluginTask.FailureLevel
+
 plugins {
     id 'java'
-    id 'org.jetbrains.intellij.platform' version '2.19.0'
+    id 'org.jetbrains.intellij.platform' version '2.20.0'
     id 'jacoco'
+    id 'pmd'
+    id 'com.diffplug.spotless' version '8.1.0'
 }
 
 group = 'com.luisppb16'
-version = '1.0.6'
+version = '1.0.7'
 
 repositories {
     mavenCentral()
@@ -23,8 +27,7 @@ repositories {
 
 dependencies {
     // JSON - Jackson
-    implementation 'com.fasterxml.jackson.core:jackson-databind:2.22.4'
-
+    implementation 'com.fasterxml.jackson.core:jackson-databind:2.23.0'
 
     // CVSS base-score calculation from OSV severity vectors (v2/v3/v3.1/v4)
     implementation 'us.springett:cvss-calculator:1.5.1'
@@ -43,6 +46,8 @@ dependencies {
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher:6.1.3'
 
     constraints {
+        // openhtmltopdf 1.0.10 only supports the pdfbox 2.x line, so the family stays on the
+        // latest 2.x release rather than the absolute 3.x.
         implementation('org.apache.pdfbox:pdfbox:2.0.37') {
             because 'openhtmltopdf 1.0.10 pulls pdfbox 2.0.24 which has known CVEs'
         }
@@ -55,7 +60,7 @@ dependencies {
     }
 
     intellijPlatform {
-        intellijIdea '2026.2'
+        intellijIdea '2026.3'
         bundledPlugin 'org.jetbrains.idea.maven'
         bundledPlugin 'com.intellij.gradle'
         bundledPlugin 'org.intellij.groovy'
@@ -84,6 +89,7 @@ tasks.withType(JavaCompile).configureEach {
 }
 
 intellijPlatform {
+    // Searchable options require a full indexing run in a sandbox for a negligible zip-size gain.
     buildSearchableOptions = false
 
     signing {
@@ -100,11 +106,58 @@ intellijPlatform {
         ides {
             recommended()
         }
+        // ExternalProjectDataCache.KEY and ExternalProject.getSourceSetModel() (@Internal) plus
+        // PathManager.getSystemPath() (@Obsolete) are the only public route to the resolved Gradle
+        // dependency graph on recent platform syncs; there is no non-internal alternative. The
+        // list is the plugin default minus INTERNAL_API_USAGES and OBSOLETE_API_USAGES.
+        failureLevel = [
+            FailureLevel.COMPATIBILITY_WARNINGS,
+            FailureLevel.COMPATIBILITY_PROBLEMS,
+            FailureLevel.DEPRECATED_API_USAGES,
+            FailureLevel.SCHEDULED_FOR_REMOVAL_API_USAGES,
+            FailureLevel.EXPERIMENTAL_API_USAGES,
+            FailureLevel.OVERRIDE_ONLY_API_USAGES,
+            FailureLevel.NON_EXTENDABLE_API_USAGES,
+            FailureLevel.PLUGIN_STRUCTURE_WARNINGS,
+            FailureLevel.MISSING_DEPENDENCIES,
+            FailureLevel.INVALID_PLUGIN,
+            FailureLevel.NOT_DYNAMIC
+        ]
+        // The psi classes (XmlTag/XmlFile/XmlElementFactory) live in the xml plugin's split module
+        // jars; the verifier's classpath mapping misses them on 2026.3 (they are on disk in
+        // plugins/xml-plugin/lib/modules/intellij.xml.psi.jar). Ignored by regex.
+        ignoredProblemsFile.set(layout.projectDirectory.file(
+            "config/pluginVerifier/ignored-problems.txt"))
     }
 }
 
 test {
-    useJUnitPlatform()
+    useJUnitPlatform {
+        excludeTags 'benchmark'
+    }
+    testLogging {
+        events "passed", "skipped", "failed"
+    }
+    maxHeapSize = '512m'
+    jvmArgs('-Xshare:off')
+    javaLauncher = javaToolchains.launcherFor {
+        languageVersion = JavaLanguageVersion.of(25)
+    }
+    finalizedBy 'jacocoTestReport'
+}
+
+// The benchmark tests run on demand; they are timing-sensitive and too slow for every build.
+// The classpath is borrowed from the :test task: the platform plugin wires it (platform jars,
+// bundled plugin/module jars and the test framework) and the benchmark classes live in the same
+// source set, so the reuse keeps the two runners permanently in sync.
+tasks.register('benchmark', Test) {
+    group = 'verification'
+    description = 'Runs the timing-sensitive benchmark test classes.'
+    testClassesDirs = sourceSets.test.output.classesDirs
+    classpath = tasks.test.classpath
+    useJUnitPlatform {
+        includeTags 'benchmark'
+    }
     testLogging {
         events "passed", "skipped", "failed"
     }
@@ -115,19 +168,30 @@ test {
     }
 }
 
-jacocoTestReport {
-    dependsOn test
-    reports {
-        xml.required = true
-        html.required = true
+check {
+    dependsOn pmdMain, spotlessCheck, jacocoTestReport
+}
+
+spotless {
+    java {
+        googleJavaFormat()
+        importOrder()
+        removeUnusedImports()
     }
 }
 
-// These tasks come from the IntelliJ Platform plugin; guard with findByName so the build script
-// does not fail in environments where they are not registered.
-['buildSearchableOptions', 'jarSearchableOptions'].each { name ->
-    def task = tasks.findByName(name)
-    if (task != null) {
-        task.enabled = false
+pmd {
+    toolVersion = '7.29.0'
+    // Precise, actionable set: real defects, threading hazards and outright bugs. Wider
+    // (default quickstart) rule sets flood the codebase with style-level noise that
+    // Spotless already owns.
+    ruleSets = []
+    ruleSetFiles = files('config/pmd/ruleset.xml')
+}
+
+jacocoTestReport {
+    reports {
+        xml.required = true
+        html.required = true
     }
 }

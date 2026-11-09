@@ -29,6 +29,7 @@ public class VulnSpotterConfigurable implements Configurable {
 
   private JBCheckBox autoScanCheckBox;
   private JSpinner cacheSpinner;
+  private JBCheckBox disableCacheCheckBox;
   private JComboBox<String> minimumSeverityCombo;
   private JBTextArea ignoredCvesArea;
   private JBCheckBox analyzeOnOpenCheckBox;
@@ -42,8 +43,17 @@ public class VulnSpotterConfigurable implements Configurable {
   public @Nullable JComponent createComponent() {
     autoScanCheckBox = new JBCheckBox("Automatically scan after project sync");
     analyzeOnOpenCheckBox = new JBCheckBox("Automatically analyze on project open");
-    analyzeOnOpenCheckBox.setSelected(true);
+    analyzeOnOpenCheckBox.setSelected(false);
     cacheSpinner = new JSpinner(new SpinnerNumberModel(60, 5, 24 * 60, 5));
+    disableCacheCheckBox =
+        new JBCheckBox("Disable vulnerability caching (every scan queries OSV.dev directly)");
+    JBLabel disableCacheHint =
+        new JBLabel(
+            "When enabled, every scan goes to OSV.dev directly and no results or dependency"
+                + " metadata are stored.");
+    disableCacheHint.setForeground(JBUI.CurrentTheme.ContextHelp.FOREGROUND);
+    disableCacheCheckBox.addItemListener(
+        e -> cacheSpinner.setEnabled(!disableCacheCheckBox.isSelected()));
     minimumSeverityCombo = new JComboBox<>(new String[] {"LOW", "MEDIUM", "HIGH", "CRITICAL"});
     ignoredCvesArea = new JBTextArea(6, 40);
     JBScrollPane ignoredScroll = new JBScrollPane(ignoredCvesArea);
@@ -57,6 +67,8 @@ public class VulnSpotterConfigurable implements Configurable {
     return FormBuilder.createFormBuilder()
         .addComponent(autoScanCheckBox)
         .addComponent(analyzeOnOpenCheckBox)
+        .addComponent(disableCacheCheckBox)
+        .addComponent(disableCacheHint)
         .addLabeledComponent("Result cache duration (minutes):", cacheSpinner)
         .addLabeledComponent("Minimum severity to report:", minimumSeverityCombo)
         .addLabeledComponent("Ignored vulnerability ids:", ignoredScroll, true)
@@ -71,6 +83,7 @@ public class VulnSpotterConfigurable implements Configurable {
     return settings.isAutoScanOnSync() != autoScanCheckBox.isSelected()
         || settings.isAnalyzeOnProjectOpen() != analyzeOnOpenCheckBox.isSelected()
         || settings.getCacheDurationMinutes() != (Integer) cacheSpinner.getValue()
+        || settings.isDisableVulnerabilityCache() != disableCacheCheckBox.isSelected()
         || !settings.getMinimumSeverity().equals(minimumSeverityCombo.getSelectedItem())
         || !settings.getIgnoredCves().equals(parseIgnoredCves());
   }
@@ -81,6 +94,7 @@ public class VulnSpotterConfigurable implements Configurable {
     settings.setAutoScanOnSync(autoScanCheckBox.isSelected());
     settings.setAnalyzeOnProjectOpen(analyzeOnOpenCheckBox.isSelected());
     settings.setCacheDurationMinutes((Integer) cacheSpinner.getValue());
+    settings.setDisableVulnerabilityCache(disableCacheCheckBox.isSelected());
     settings.setMinimumSeverity((String) minimumSeverityCombo.getSelectedItem());
     settings.setIgnoredCves(parseIgnoredCves());
   }
@@ -91,6 +105,7 @@ public class VulnSpotterConfigurable implements Configurable {
     autoScanCheckBox.setSelected(settings.isAutoScanOnSync());
     analyzeOnOpenCheckBox.setSelected(settings.isAnalyzeOnProjectOpen());
     cacheSpinner.setValue(settings.getCacheDurationMinutes());
+    disableCacheCheckBox.setSelected(settings.isDisableVulnerabilityCache());
     minimumSeverityCombo.setSelectedItem(settings.getMinimumSeverity());
     ignoredCvesArea.setText(String.join("\n", settings.getIgnoredCves()));
   }
@@ -99,6 +114,7 @@ public class VulnSpotterConfigurable implements Configurable {
   public void disposeUIResources() {
     autoScanCheckBox = null;
     cacheSpinner = null;
+    disableCacheCheckBox = null;
     minimumSeverityCombo = null;
     ignoredCvesArea = null;
     analyzeOnOpenCheckBox = null;

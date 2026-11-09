@@ -158,6 +158,15 @@ public class OsvClient {
     return Instant.now().plus(Duration.ofMinutes(cacheMinutes));
   }
 
+  /**
+   * Whether the per-package batch answers may be served from and stored into the scan cache. With
+   * the matching setting on, every scan must hit OSV.dev, so the cache is bypassed on both ends and
+   * the map never grows; hydrated vulnerability records stay stamp-revalidated ({@link #hydrate}).
+   */
+  private static boolean vulnerabilityCacheEnabled() {
+    return !VulnSpotterSettings.getInstance().isDisableVulnerabilityCache();
+  }
+
   private static OsvResponse emptyToNull(OsvResponse response) {
     if (response == null || response.vulns() == null || response.vulns().isEmpty()) {
       return null;
@@ -215,11 +224,18 @@ public class OsvClient {
    */
   public CompletableFuture<OsvBatchResponse> checkDependencies(List<OsvPackage> packages) {
     Objects.requireNonNull(packages, "Packages list cannot be null");
-
-    return CompletableFuture.supplyAsync(() -> doCheckDependencies(packages), executorService);
+    try {
+      return CompletableFuture.supplyAsync(() -> doCheckDependencies(packages), executorService);
+    } catch (java.util.concurrent.RejectedExecutionException e) {
+      // The owning project service was disposed mid-scan. Fail as cancelled: an empty answer
+      // would read as "every package is safe", which the scanner must never imply.
+      return CompletableFuture.failedFuture(
+          new java.util.concurrent.CancellationException("Scan pipeline already shut down"));
+    }
   }
 
   private OsvBatchResponse doCheckDependencies(List<OsvPackage> packages) {
+    boolean useCache = vulnerabilityCacheEnabled();
     Instant exp = cacheExpiration();
     List<OsvResponse> finalResults = new ArrayList<>(Collections.nCopies(packages.size(), null));
     List<OsvQuery> queriesToFetch = new ArrayList<>();
@@ -227,7 +243,7 @@ public class OsvClient {
 
     for (int i = 0; i < packages.size(); i++) {
       OsvPackage pkg = packages.get(i);
-      CacheEntry<OsvResponse> entry = packageCache.get(key(pkg));
+      CacheEntry<OsvResponse> entry = useCache ? packageCache.get(key(pkg)) : null;
       if (entry != null && entry.isFresh()) {
         finalResults.set(i, emptyToNull(entry.value));
       } else {
@@ -253,7 +269,7 @@ public class OsvClient {
 
       if (minimal == null || minimal.vulns() == null || minimal.vulns().isEmpty()) {
         // Only cache a definitive "no vulnerabilities" when OSV actually answered this query.
-        if (j < minimalResults.size()) {
+        if (useCache && j < minimalResults.size()) {
           packageCache.put(
               key(packages.get(originalIndex)), new CacheEntry<>(new OsvResponse(List.of()), exp));
         }
@@ -269,7 +285,9 @@ public class OsvClient {
 
       OsvResponse full = new OsvResponse(fullVulns);
       finalResults.set(originalIndex, emptyToNull(full));
-      packageCache.put(key(packages.get(originalIndex)), new CacheEntry<>(full, exp));
+      if (useCache) {
+        packageCache.put(key(packages.get(originalIndex)), new CacheEntry<>(full, exp));
+      }
     }
 
     return new OsvBatchResponse(finalResults);
@@ -389,26 +407,23 @@ public class OsvClient {
 
   /** GET with limited retries for transient failures. */
   private String getWithRetry(String url) throws IOException {
-    return withRetry(
-        () ->
-            HttpRequests.request(url)
-                .connectTimeout(HTTP_TIMEOUT_MS)
-                .readTimeout(HTTP_TIMEOUT_MS)
-                .readString());
+    return withRetry(() ->
+        HttpRequests.request(url)
+            .connectTimeout(HTTP_TIMEOUT_MS)
+            .readTimeout(HTTP_TIMEOUT_MS)
+            .readString());
   }
 
   /** POST with limited retries for transient failures. */
   private String postWithRetry(String url, String requestBody) throws IOException {
-    return withRetry(
-        () ->
-            HttpRequests.post(url, "application/json")
-                .connectTimeout(HTTP_TIMEOUT_MS)
-                .readTimeout(HTTP_TIMEOUT_MS)
-                .connect(
-                    request -> {
-                      request.write(requestBody);
-                      return request.readString();
-                    }));
+    return withRetry(() ->
+        HttpRequests.post(url, "application/json")
+            .connectTimeout(HTTP_TIMEOUT_MS)
+            .readTimeout(HTTP_TIMEOUT_MS)
+            .connect(request -> {
+              request.write(requestBody);
+              return request.readString();
+            }));
   }
 
   /** A blocking HTTP read, expressed the way HttpRequests builds one. */

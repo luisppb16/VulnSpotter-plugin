@@ -36,13 +36,14 @@ import org.jetbrains.idea.maven.project.MavenProjectsManager;
 import org.jetbrains.plugins.gradle.util.GradleConstants;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mock;
 import org.mockito.MockedStatic;
 import org.mockito.MockitoAnnotations;
 
+@Tag("benchmark")
 class DependencyParserBenchmarkTest {
-
   @Mock private Project project;
   @Mock private MavenProjectsManager mavenProjectsManager;
   @Mock private ProjectDataManager projectDataManager;

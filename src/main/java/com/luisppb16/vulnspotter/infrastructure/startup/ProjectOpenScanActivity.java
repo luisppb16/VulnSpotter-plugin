@@ -42,10 +42,9 @@ public final class ProjectOpenScanActivity implements ProjectActivity {
   static boolean hasCriticalResults(List<VulnerabilityScannerService.ScanResult> results) {
     return results != null
         && results.stream()
-            .anyMatch(
-                result ->
-                    SeverityAnalyzer.CRITICAL.equals(
-                        SeverityAnalyzer.getHighestSeverity(result.vulnerabilities())));
+            .anyMatch(result ->
+                SeverityAnalyzer.CRITICAL.equals(
+                    SeverityAnalyzer.getHighestSeverity(result.vulnerabilities())));
   }
 
   @Override
@@ -62,25 +61,23 @@ public final class ProjectOpenScanActivity implements ProjectActivity {
     }
     scanner
         .scanDependencies()
-        .thenAccept(
-            results -> {
-              if (project.isDisposed()) {
-                return;
-              }
-              // Publication is owned by the service; this trigger only counts critical findings.
-              if (hasCriticalResults(results)) {
-                VulnSpotterNotifications.notifyWarning(
-                    project,
-                    VulnSpotterNotifications.TITLE,
-                    "Critical CVEs found at project open. Open the VulnSpotter tool window for "
-                        + "details.");
-              }
-            })
-        .exceptionally(
-            ex -> {
-              LOG.warn("VulnSpotter project-open scan failed", ex);
-              return null;
-            });
+        .thenAccept(results -> {
+          if (project.isDisposed()) {
+            return;
+          }
+          // Publication is owned by the service; this trigger only counts critical findings.
+          if (hasCriticalResults(results)) {
+            VulnSpotterNotifications.notifyWarning(
+                project,
+                VulnSpotterNotifications.TITLE,
+                "Critical CVEs found at project open. Open the VulnSpotter tool window for "
+                    + "details.");
+          }
+        })
+        .exceptionally(ex -> {
+          LOG.warn("VulnSpotter project-open scan failed", ex);
+          return null;
+        });
     return Unit.INSTANCE;
   }
 }

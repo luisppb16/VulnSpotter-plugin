@@ -26,12 +26,11 @@ final class SwingDetailsPanel implements DetailsPanel {
   SwingDetailsPanel() {
     pane.setContentType("text/html");
     pane.setEditable(false);
-    pane.addHyperlinkListener(
-        e -> {
-          if (e.getEventType() == HyperlinkEvent.EventType.ACTIVATED && e.getURL() != null) {
-            BrowserUtil.browse(e.getURL());
-          }
-        });
+    pane.addHyperlinkListener(e -> {
+      if (e.getEventType() == HyperlinkEvent.EventType.ACTIVATED && e.getURL() != null) {
+        BrowserUtil.browse(e.getURL());
+      }
+    });
   }
 
   @Override

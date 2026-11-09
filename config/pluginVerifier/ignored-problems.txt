@@ -1,0 +1,3 @@
+Access to unresolved class com\.intellij\.psi\.XmlElementFactory.*
+Access to unresolved class com\.intellij\.psi\.xml\.(XmlTag|XmlFile|XmlTagValue).*
+Package 'com\.intellij\.psi\.xml' is not found.*

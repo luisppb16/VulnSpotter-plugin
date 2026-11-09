@@ -37,33 +37,30 @@ public final class ReadActionStubs {
   public static void installNonBlockingSubmitStub(MockedStatic<ReadAction> readActionMock) {
     readActionMock
         .when(() -> ReadAction.nonBlocking(any(Callable.class)))
-        .thenAnswer(
-            invocation -> {
-              Callable<?> callable = invocation.getArgument(0);
-              Attempt attempt = tryCall(callable);
-              CancellablePromise<Object> promise = mock(CancellablePromise.class);
-              when(promise.onSuccess(any(Consumer.class)))
-                  .thenAnswer(
-                      successInvocation -> {
-                        if (attempt.failure() == null) {
-                          Consumer<Object> consumer = successInvocation.getArgument(0);
-                          consumer.accept(attempt.outcome());
-                        }
-                        return promise;
-                      });
-              when(promise.onError(any(Consumer.class)))
-                  .thenAnswer(
-                      errorInvocation -> {
-                        if (attempt.failure() != null) {
-                          Consumer<Throwable> consumer = errorInvocation.getArgument(0);
-                          consumer.accept(attempt.failure());
-                        }
-                        return promise;
-                      });
-              NonBlockingReadAction<Object> action = mock(NonBlockingReadAction.class);
-              when(action.submit(any(Executor.class))).thenReturn(promise);
-              return action;
-            });
+        .thenAnswer(invocation -> {
+          Callable<?> callable = invocation.getArgument(0);
+          Attempt attempt = tryCall(callable);
+          CancellablePromise<Object> promise = mock(CancellablePromise.class);
+          when(promise.onSuccess(any(Consumer.class)))
+              .thenAnswer(successInvocation -> {
+                if (attempt.failure() == null) {
+                  Consumer<Object> consumer = successInvocation.getArgument(0);
+                  consumer.accept(attempt.outcome());
+                }
+                return promise;
+              });
+          when(promise.onError(any(Consumer.class)))
+              .thenAnswer(errorInvocation -> {
+                if (attempt.failure() != null) {
+                  Consumer<Throwable> consumer = errorInvocation.getArgument(0);
+                  consumer.accept(attempt.failure());
+                }
+                return promise;
+              });
+          NonBlockingReadAction<Object> action = mock(NonBlockingReadAction.class);
+          when(action.submit(any(Executor.class))).thenReturn(promise);
+          return action;
+        });
   }
 
   /** Runs the callable synchronously and captures its outcome (or failure) as immutable state. */

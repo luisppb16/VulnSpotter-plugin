@@ -9,12 +9,18 @@ package com.luisppb16.vulnspotter.infrastructure.report;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.nullable;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.luisppb16.vulnspotter.application.service.TransitiveRemediationService;
 import com.luisppb16.vulnspotter.application.service.VulnerabilityScannerService.ScanResult;
 import com.luisppb16.vulnspotter.domain.model.OsvPackage;
 import com.luisppb16.vulnspotter.domain.model.OsvVulnerability;
+import com.luisppb16.vulnspotter.domain.model.ParentRemediation;
 import com.luisppb16.vulnspotter.testsupport.VulnFixtures;
 import com.luisppb16.vulnspotter.util.Json;
 import java.nio.file.Files;
@@ -68,6 +74,37 @@ class ReportExportServiceTest {
     ScanResult clean =
         new ScanResult(new OsvPackage("org.safe:library", "Maven", "1.0.0"), false, List.of());
     return List.of(vulnerable, clean);
+  }
+
+  /** A vulnerable transitive package, the parent that pulls it in, and a resolver stub. */
+  private static List<ScanResult> sampleTransitiveWithParent() {
+    ScanResult vulnerable =
+        VulnFixtures.result(
+            VulnFixtures.pkgWithChains("g:a", "1.5.0", List.of(List.of("root:r", "g:a"))),
+            true,
+            VulnFixtures.vuln(
+                "GHSA-test-1234",
+                "DoS",
+                null,
+                null,
+                List.of(
+                    VulnFixtures.affectedWithWindows(
+                        "g:a",
+                        List.of(
+                            VulnFixtures.range(
+                                "ECOSYSTEM",
+                                List.of(VulnFixtures.event("1.0.0", "2.0.0", null, null)))))),
+                null,
+                null));
+    ScanResult parent = VulnFixtures.result(VulnFixtures.pkg("root:r", "1.2.3"), false);
+    return List.of(vulnerable, parent);
+  }
+
+  private static TransitiveRemediationService parentRemediationStub() {
+    TransitiveRemediationService resolver = mock(TransitiveRemediationService.class);
+    when(resolver.resolve(any(OsvPackage.class), nullable(String.class), any()))
+        .thenReturn(List.of(new ParentRemediation("root:r", "1.2.3", "4.1.0", "2.1.0")));
+    return resolver;
   }
 
   @Test
@@ -267,7 +304,7 @@ class ReportExportServiceTest {
     assertThat(lines.get(0))
         .isEqualTo(
             "Package,Version,Ecosystem,Vulnerability ID,CVE Aliases,Severity,CVSS,"
-                + "Affected Range,Recommended Fix,Summary,Provenance");
+                + "Affected Range,Recommended Fix,Summary,Provenance,Dependency Paths,Parent Fix");
     // 1 header + 1 vulnerable row + 1 clean row.
     assertThat(lines).hasSize(3);
     assertThat(lines.get(1))
@@ -375,5 +412,177 @@ class ReportExportServiceTest {
         .contains("Recommended fix: **2.9.10**")
         .contains("[GHSA-test-1234](https://osv.dev/vulnerability/GHSA-test-1234)")
         .contains("CRITICAL");
+  }
+
+  @Test
+  void exportsCsvParentFixColumnForTransitiveFindings() throws Exception {
+    // Given: a transitive finding whose resolver deduces the fixing parent release.
+    TransitiveRemediationService resolver = parentRemediationStub();
+    Path csvPath = tempDir.resolve("parent-fix.csv");
+
+    // When
+    ReportExportService.exportCsv(sampleTransitiveWithParent(), resolver, csvPath);
+
+    // Then: the cell carries the root, its current version, the target and the shipped child.
+    assertThat(Files.readString(csvPath))
+        .contains("Summary,Provenance,Dependency Paths,Parent Fix")
+        .contains("\"root:r > g:a\"")
+        .contains("\"root:r 1.2.3 → 4.1.0 (ships 2.1.0)\"");
+  }
+
+  @Test
+  void exportsCsvWithoutParentFixWhenTheResolverIsAbsent() throws Exception {
+    // Given
+    Path csvPath = tempDir.resolve("parent-fix-absent.csv");
+
+    // When
+    ReportExportService.exportCsv(sampleTransitiveWithParent(), csvPath);
+
+    // Then: the legacy two-argument export still names the root with its resolved version only.
+    assertThat(Files.readString(csvPath)).contains("\"root:r 1.2.3\"");
+  }
+
+  @Test
+  void exportsJsonWithParentVersionsAndParentRemediations() throws Exception {
+    // Given
+    TransitiveRemediationService resolver = parentRemediationStub();
+    Path jsonPath = tempDir.resolve("parents.json");
+
+    // When
+    ReportExportService.exportJsonReport(
+        "demo-project", sampleTransitiveWithParent(), resolver, jsonPath);
+
+    // Then
+    JsonNode item = MAPPER.readTree(jsonPath.toFile()).get("results").get(0);
+    assertThat(item.get("parentVersions").get("root:r").asText()).isEqualTo("1.2.3");
+    JsonNode remediation = item.get("parentRemediations").get(0);
+    assertThat(remediation.get("root").asText()).isEqualTo("root:r");
+    assertThat(remediation.get("currentVersion").asText()).isEqualTo("1.2.3");
+    assertThat(remediation.get("targetVersion").asText()).isEqualTo("4.1.0");
+    assertThat(remediation.get("shipsChildVersion").asText()).isEqualTo("2.1.0");
+  }
+
+  @Test
+  void exportsSarifWithParentRemediationProperties() throws Exception {
+    // Given
+    TransitiveRemediationService resolver = parentRemediationStub();
+    Path sarifPath = tempDir.resolve("parents.sarif");
+
+    // When
+    ReportExportService.exportSarif(sampleTransitiveWithParent(), resolver, sarifPath);
+
+    // Then
+    JsonNode properties =
+        MAPPER
+            .readTree(sarifPath.toFile())
+            .get("runs")
+            .get(0)
+            .get("results")
+            .get(0)
+            .get("properties");
+    assertThat(properties.get("parentRemediations").get(0).get("targetVersion").asText())
+        .isEqualTo("4.1.0");
+    assertThat(properties.get("parentRemediations").get(0).get("shipsChildVersion").asText())
+        .isEqualTo("2.1.0");
+  }
+
+  @Test
+  void exportsMarkdownWithTransitiveFixLine() throws Exception {
+    // Given
+    TransitiveRemediationService resolver = parentRemediationStub();
+    Path mdPath = tempDir.resolve("parents.md");
+
+    // When
+    ReportExportService.exportMarkdown(
+        "demo-project", sampleTransitiveWithParent(), resolver, mdPath);
+
+    // Then
+    assertThat(Files.readString(mdPath))
+        .contains("Dependency provenance: Transitive dependency (via root:r 1.2.3)")
+        .contains("Transitive fix: upgrade `root:r` from 1.2.3 to **4.1.0** (ships `g:a` 2.1.0)");
+  }
+
+  @Test
+  void exportsCsvWithDependencyPathsColumnForChains() throws Exception {
+    // Given: a transitive dependency reached through two different chains.
+    ScanResult multi =
+        VulnFixtures.result(
+            VulnFixtures.pkgWithChains(
+                "g:a",
+                "1.5.0",
+                List.of(List.of("root:b", "mid:m", "g:a"), List.of("root:a", "g:a"))),
+            true,
+            VulnFixtures.cvss("GHSA-test-1234", "9.8"));
+    Path csvPath = tempDir.resolve("paths.csv");
+
+    // When
+    ReportExportService.exportCsv(List.of(multi), csvPath);
+
+    // Then: the column carries every sorted "a > b" path, one chain per " | " segment.
+    assertThat(Files.readString(csvPath)).contains("\"root:a > g:a | root:b > mid:m > g:a\"");
+  }
+
+  @Test
+  void exportsCsvKeepingTheColumnCountWhenThereAreNoChains() throws Exception {
+    // Given: the clean row of the sample set carries no chains.
+    Path csvPath = tempDir.resolve("empty-paths.csv");
+
+    // When
+    ReportExportService.exportCsv(sampleResults(), csvPath);
+
+    // Then: the empty paths cell keeps the clean row aligned with the 13-column header.
+    String cleanRow = Files.readString(csvPath).substring(1).lines().toList().get(2);
+    assertThat(cleanRow)
+        .isEqualTo("\"org.safe:library\",\"1.0.0\",\"Maven\",(none),,,,,,\"\",\"\",\"\",\"\",");
+  }
+
+  @Test
+  void exportsJsonAndSarifWithRawDependencyChains() throws Exception {
+    // Given
+    ScanResult transitive =
+        VulnFixtures.result(
+            VulnFixtures.pkgWithChains("g:a", "1.5.0", List.of(List.of("root:r", "g:a"))),
+            true,
+            VulnFixtures.cvss("GHSA-test-1234", "9.8"));
+
+    // When
+    Path jsonPath = tempDir.resolve("chains.json");
+    Path sarifPath = tempDir.resolve("chains.sarif");
+    ReportExportService.exportJsonReport("demo-project", List.of(transitive), jsonPath);
+    ReportExportService.exportSarif(List.of(transitive), sarifPath);
+
+    // Then: both formats carry the raw chains the scan resolved.
+    JsonNode chains =
+        MAPPER.readTree(jsonPath.toFile()).get("results").get(0).get("dependencyChains");
+    assertThat(chains.get(0).get(0).asText()).isEqualTo("root:r");
+    assertThat(chains.get(0).get(1).asText()).isEqualTo("g:a");
+    JsonNode sarifChains =
+        MAPPER
+            .readTree(sarifPath.toFile())
+            .get("runs")
+            .get(0)
+            .get("results")
+            .get(0)
+            .get("properties")
+            .get("dependencyChains");
+    assertThat(sarifChains.get(0).get(0).asText()).isEqualTo("root:r");
+  }
+
+  @Test
+  void exportsMarkdownWithDependencyTreeBlock() throws Exception {
+    // Given
+    ScanResult transitive =
+        VulnFixtures.result(
+            VulnFixtures.pkgWithChains("g:a", "1.5.0", List.of(List.of("root:r", "g:a"))),
+            true,
+            VulnFixtures.cvss("GHSA-test-1234", "9.8"));
+    Path mdPath = tempDir.resolve("tree.md");
+
+    // When
+    ReportExportService.exportMarkdown("demo-project", List.of(transitive), null, mdPath);
+
+    // Then
+    assertThat(Files.readString(mdPath))
+        .contains("Dependency tree:\n```\ndemo-project\n└─ root:r\n   └─ ⚠️ g:a 1.5.0\n```");
   }
 }

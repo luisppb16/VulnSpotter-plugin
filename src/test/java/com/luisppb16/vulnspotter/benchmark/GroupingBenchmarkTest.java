@@ -16,6 +16,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -24,6 +25,7 @@ import org.junit.jupiter.api.Test;
  * <p>Both implementations alternate within each measured round so JIT/GC state affects both the
  * same way; a single-block comparison is order-biased and can swing the result by tens of percent.
  */
+@Tag("benchmark")
 public class GroupingBenchmarkTest {
 
   private static final int WARMUP_ROUNDS = 5;
@@ -76,12 +78,11 @@ public class GroupingBenchmarkTest {
     Map<PackageKey, List<OsvPackage>> byRecord = runRecordKey(packages);
 
     assertEquals(byString.size(), byRecord.size(), "Group count must match");
-    byString.forEach(
-        (key, expected) -> {
-          String[] parts = key.split(":", 3);
-          List<OsvPackage> actual = byRecord.get(new PackageKey(parts[0], parts[1], parts[2]));
-          assertEquals(expected, actual, "Group " + key + " must contain the same packages");
-        });
+    byString.forEach((key, expected) -> {
+      String[] parts = key.split(":", 3);
+      List<OsvPackage> actual = byRecord.get(new PackageKey(parts[0], parts[1], parts[2]));
+      assertEquals(expected, actual, "Group " + key + " must contain the same packages");
+    });
   }
 
   private Map<String, List<OsvPackage>> runStringConcat(List<OsvPackage> packages) {

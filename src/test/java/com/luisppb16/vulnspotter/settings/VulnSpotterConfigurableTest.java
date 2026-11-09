@@ -14,6 +14,9 @@ import static org.mockito.Mockito.mockStatic;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.intellij.ui.components.JBCheckBox;
+import java.awt.Component;
+import java.awt.Container;
 import java.util.List;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -44,6 +47,7 @@ class VulnSpotterConfigurableTest {
     when(settings.isAutoScanOnSync()).thenReturn(false);
     when(settings.isAnalyzeOnProjectOpen()).thenReturn(true);
     when(settings.getCacheDurationMinutes()).thenReturn(60);
+    when(settings.isDisableVulnerabilityCache()).thenReturn(false);
     when(settings.getMinimumSeverity()).thenReturn("LOW");
     when(settings.getIgnoredCves()).thenReturn(List.of());
 
@@ -72,17 +76,17 @@ class VulnSpotterConfigurableTest {
   @Test
   @DisplayName("should_detect_and_apply_changed_analyze_on_project_open")
   void shouldDetectAndApplyChangedAnalyzeOnProjectOpen() throws Exception {
-    // Given: settings say false but the checkbox defaults to true.
-    when(settings.isAnalyzeOnProjectOpen()).thenReturn(false);
+    // Given: settings say on but the fresh form starts unchecked (the new factory default).
+    when(settings.isAnalyzeOnProjectOpen()).thenReturn(true);
     configurable.createComponent();
 
     // When
     boolean modified = configurable.isModified();
     configurable.apply();
 
-    // Then
+    // Then: the form stores its own (unchecked) state over the changed setting.
     assertThat(modified).isTrue();
-    verify(settings).setAnalyzeOnProjectOpen(true);
+    verify(settings).setAnalyzeOnProjectOpen(false);
   }
 
   @Test
@@ -100,5 +104,54 @@ class VulnSpotterConfigurableTest {
               configurable.isModified();
             })
         .doesNotThrowAnyException();
+  }
+
+  @Test
+  @DisplayName("should_detect_and_apply_changed_disable_vulnerability_cache")
+  void shouldDetectAndApplyChangedDisableVulnerabilityCache() throws Exception {
+    // Given: the stored value is off but the form checkbox is ticked.
+    JBCheckBox disableCacheCheckBox = findDisableCacheCheckBox(configurable.createComponent());
+    assertThat(disableCacheCheckBox).isNotNull();
+    disableCacheCheckBox.setSelected(true);
+
+    // When
+    boolean modified = configurable.isModified();
+    configurable.apply();
+
+    // Then
+    assertThat(modified).isTrue();
+    verify(settings).setDisableVulnerabilityCache(true);
+  }
+
+  @Test
+  @DisplayName("should_reset_disable_vulnerability_cache_from_stored_value")
+  void shouldResetDisableVulnerabilityCacheFromStoredValue() throws Exception {
+    // Given: a stored on-value and a freshly built form whose checkbox starts unchecked.
+    when(settings.isDisableVulnerabilityCache()).thenReturn(true);
+    JBCheckBox disableCacheCheckBox = findDisableCacheCheckBox(configurable.createComponent());
+    assertThat(disableCacheCheckBox.isSelected()).isFalse();
+
+    // When
+    configurable.reset();
+
+    // Then: the checkbox mirrors the stored value and the form reports no pending change.
+    assertThat(disableCacheCheckBox.isSelected()).isTrue();
+    assertThat(configurable.isModified()).isFalse();
+  }
+
+  private JBCheckBox findDisableCacheCheckBox(Container container) {
+    for (Component component : container.getComponents()) {
+      if (component instanceof JBCheckBox box
+          && box.getText().startsWith("Disable vulnerability caching")) {
+        return box;
+      }
+      if (component instanceof Container child) {
+        JBCheckBox found = findDisableCacheCheckBox(child);
+        if (found != null) {
+          return found;
+        }
+      }
+    }
+    return null;
   }
 }

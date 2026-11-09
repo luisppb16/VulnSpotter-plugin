@@ -195,7 +195,11 @@ public class UpdateDependencyQuickFix implements IntentionAction {
     int from = 0;
     int idx;
     boolean changed = false;
-    while ((idx = text.indexOf(oldCoordinate, from)) >= 0) {
+    while (true) {
+      idx = text.indexOf(oldCoordinate, from);
+      if (idx < 0) {
+        break;
+      }
       int end = idx + oldCoordinate.length();
       boolean leftBounded = idx == 0 || !isCoordinateChar(text.charAt(idx - 1));
       boolean rightBounded = end >= text.length() || !isCoordinateChar(text.charAt(end));

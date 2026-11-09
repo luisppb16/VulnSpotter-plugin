@@ -47,29 +47,28 @@ public class CheckVulnerabilitiesAction extends AnAction {
       return;
     }
 
-    toolWindow.show(
-        () -> {
-          ContentManager cm = toolWindow.getContentManager();
-          // The tool window may expose several contents; find the one carrying our panel rather
-          // than
-          // assuming it lives at index 0.
-          VulnSpotterToolWindow panel = null;
-          for (Content content : cm.getContents()) {
-            VulnSpotterToolWindow candidate =
-                content.getUserData(VulnSpotterToolWindowFactory.TOOL_WINDOW_KEY);
-            if (candidate != null) {
-              panel = candidate;
-              break;
-            }
-          }
-          if (panel == null) {
-            VulnSpotterNotifications.notifyWarning(
-                project,
-                VulnSpotterNotifications.TITLE,
-                "The VulnSpotter panel is not initialized yet. Try again in a moment.");
-            return;
-          }
-          panel.runScan();
-        });
+    toolWindow.show(() -> {
+      ContentManager cm = toolWindow.getContentManager();
+      // The tool window may expose several contents; find the one carrying our panel rather
+      // than
+      // assuming it lives at index 0.
+      VulnSpotterToolWindow panel = null;
+      for (Content content : cm.getContents()) {
+        VulnSpotterToolWindow candidate =
+            content.getUserData(VulnSpotterToolWindowFactory.TOOL_WINDOW_KEY);
+        if (candidate != null) {
+          panel = candidate;
+          break;
+        }
+      }
+      if (panel == null) {
+        VulnSpotterNotifications.notifyWarning(
+            project,
+            VulnSpotterNotifications.TITLE,
+            "The VulnSpotter panel is not initialized yet. Try again in a moment.");
+        return;
+      }
+      panel.runScan();
+    });
   }
 }

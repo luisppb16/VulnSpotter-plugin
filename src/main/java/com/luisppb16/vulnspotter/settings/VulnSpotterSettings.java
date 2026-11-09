@@ -22,10 +22,11 @@ import org.jetbrains.annotations.NotNull;
 public final class VulnSpotterSettings implements PersistentStateComponent<VulnSpotterSettings> {
 
   private int cacheDurationMinutes = 60;
+  private boolean disableVulnerabilityCache = false;
   private String minimumSeverity = "LOW";
   private List<String> ignoredCves = new ArrayList<>();
-  private boolean autoScanOnSync = false;
-  private boolean analyzeOnProjectOpen = true;
+  private boolean autoScanOnSync = true;
+  private boolean analyzeOnProjectOpen = false;
 
   public static VulnSpotterSettings getInstance() {
     return ApplicationManager.getApplication().getService(VulnSpotterSettings.class);
@@ -37,6 +38,14 @@ public final class VulnSpotterSettings implements PersistentStateComponent<VulnS
 
   public void setCacheDurationMinutes(int cacheDurationMinutes) {
     this.cacheDurationMinutes = cacheDurationMinutes;
+  }
+
+  public boolean isDisableVulnerabilityCache() {
+    return disableVulnerabilityCache;
+  }
+
+  public void setDisableVulnerabilityCache(boolean disableVulnerabilityCache) {
+    this.disableVulnerabilityCache = disableVulnerabilityCache;
   }
 
   public String getMinimumSeverity() {

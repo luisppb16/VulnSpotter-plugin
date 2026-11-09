@@ -10,7 +10,7 @@
     <name>VulnSpotter</name>
     <vendor email="ironkrozz@gmail.com" url="https://github.com/luisppb16">Luis Pepe</vendor>
 
-    <idea-version since-build="262"/>
+    <idea-version since-build="263"/>
 
     <description><![CDATA[
     A smart vulnerability scanner for your project dependencies.
@@ -28,11 +28,26 @@
         <li><b>Direct References:</b> One-click access to official security advisories (CVE, GHSA, etc.).</li>
         <li><b>Visual Indicators:</b> Clear visual cues for safe vs. vulnerable packages.</li>
         <li><b>Exclusions:</b> Ignore specific dependencies or CVEs via a <code>.vulnspotterignore</code> file or the Settings page.</li>
-        <li><b>Analysis on Project Open:</b> Dependencies are scanned automatically when the project opens, with an IDE notification when pending critical CVEs are found.</li>
+        <li><b>Background Scans:</b> The project is re-scanned after every Gradle/Maven sync (on by default); the opening scan and its notifications are opt-in from the Settings page.</li>
     </ul>
     ]]></description>
 
     <change-notes><![CDATA[
+        <h3>1.0.7</h3>
+        <ul>
+            <li><b>Real Gradle dependency chains:</b> transitive findings now read the resolved source-set model of the Gradle sync, so dependency trees match the build exactly. Classpath entries no build script declares (e.g. what the intellijPlatform toolchain places there) are labeled as <b>Provided by the intellijPlatform toolchain</b> with an <code>intellijPlatform (provided)</code> root in the path views.</li>
+            <li><b>Aligned reports:</b> every exported finding carries the full Remediation box (direct upgrade, per-root advice, platform note) and the <code>mvn dependency:tree</code>-style path, mirroring the tool window on HTML, PDF, CSV, JSON, SARIF and Markdown.</li>
+            <li><b>Preview refresh:</b> the details panel is cleared on every re-scan instead of holding stale content.</li>
+            <li><b>Settings:</b> new <i>Disable vulnerability caching</i> toggle (every scan queries OSV.dev directly and no metadata is stored), auto-scan after sync enabled by default, project-open scan opt-in, and a cache-duration spinner that grays out while caching is disabled.</li>
+        </ul>
+        <h3>1.0.6</h3>
+        <ul>
+            <li><b>Gradle dependency chains:</b> the scan preserves the Gradle dependency chains so transitive findings are labeled transitive with their roots instead of declared.</li>
+        </ul>
+        <h3>1.0.4</h3>
+        <ul>
+            <li><b>Stability:</b> scan results no longer leak between overlapping scans; NUL bytes are sanitized from cache-key literals.</li>
+        </ul>
         <h3>1.0.2</h3>
         <ul>
             <li><b>Automatic Analysis on Project Open:</b> The project's dependencies are scanned when it opens (toggle enabled by default) and an IDE notification is raised when pending critical CVEs are found.</li>
@@ -51,7 +66,6 @@
     ]]></change-notes>
 
     <depends>com.intellij.modules.platform</depends>
-    <depends>com.intellij.modules.xml</depends>
     <depends>org.jetbrains.idea.maven</depends>
     <depends>com.intellij.gradle</depends>
     <depends>org.intellij.groovy</depends>

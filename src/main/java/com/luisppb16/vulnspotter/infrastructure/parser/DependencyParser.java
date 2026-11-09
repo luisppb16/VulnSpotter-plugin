@@ -15,6 +15,7 @@ import com.intellij.openapi.externalSystem.model.ExternalProjectInfo;
 import com.intellij.openapi.externalSystem.model.ProjectKeys;
 import com.intellij.openapi.externalSystem.model.project.LibraryData;
 import com.intellij.openapi.externalSystem.model.project.LibraryDependencyData;
+import com.intellij.openapi.externalSystem.model.project.LibraryPathType;
 import com.intellij.openapi.externalSystem.model.project.ModuleData;
 import com.intellij.openapi.externalSystem.model.project.ProjectData;
 import com.intellij.openapi.externalSystem.service.project.ProjectDataManager;
@@ -22,16 +23,19 @@ import com.intellij.openapi.externalSystem.util.ExternalSystemApiUtil;
 import com.intellij.openapi.module.Module;
 import com.intellij.openapi.module.ModuleManager;
 import com.intellij.openapi.project.Project;
+import com.intellij.openapi.roots.DependencyScope;
 import com.intellij.openapi.roots.OrderEnumerator;
 import com.intellij.openapi.roots.OrderRootType;
 import com.intellij.openapi.roots.libraries.Library;
 import com.intellij.openapi.roots.libraries.LibraryTable;
 import com.intellij.openapi.roots.libraries.LibraryTablesRegistrar;
 import com.intellij.openapi.vfs.VirtualFile;
+import com.luisppb16.vulnspotter.domain.model.DependencyProvenance;
 import com.luisppb16.vulnspotter.domain.model.Ecosystem;
 import com.luisppb16.vulnspotter.domain.model.OsvPackage;
 import com.luisppb16.vulnspotter.domain.model.PackageKey;
 import com.luisppb16.vulnspotter.util.Json;
+import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -55,6 +59,13 @@ import org.jetbrains.idea.maven.model.MavenArtifactNode;
 import org.jetbrains.idea.maven.model.MavenArtifactState;
 import org.jetbrains.idea.maven.project.MavenProject;
 import org.jetbrains.idea.maven.project.MavenProjectsManager;
+import org.jetbrains.plugins.gradle.model.ExternalDependency;
+import org.jetbrains.plugins.gradle.model.ExternalLibraryDependency;
+import org.jetbrains.plugins.gradle.model.ExternalMultiLibraryDependency;
+import org.jetbrains.plugins.gradle.model.ExternalProject;
+import org.jetbrains.plugins.gradle.model.ExternalSourceSet;
+import org.jetbrains.plugins.gradle.model.GradleSourceSetModel;
+import org.jetbrains.plugins.gradle.service.project.data.ExternalProjectDataCache;
 import org.jetbrains.plugins.gradle.util.GradleConstants;
 
 /**
@@ -76,6 +87,14 @@ public final class DependencyParser {
   // Matches a Maven local-repository path: .../repository/<group path>/<artifact>/<version>/<jar>
   private static final Pattern MAVEN_REPO_PATTERN =
       Pattern.compile(".*/repository/(.+)/([^/]+)/([^/]+)/[^/]+-[^/]+\\.jar$");
+  // Groups the IDE toolchain uses for its own injected libraries (intellijPlatform block).
+  private static final Set<String> BUNDLED_LIBRARY_GROUPS =
+      Set.of("bundledModule", "bundledPlugin");
+  // Jars extracted from the IDE distribution by the Gradle toolchain transforms.
+  private static final Pattern EXTRACTED_IDE_JAR_PATTERN =
+      Pattern.compile(".*/transforms/[0-9a-f]+/transformed/extracted/.*\\.jar$");
+  // Walk cap for the serialized ExternalProject graph (cycles or back-references would never end).
+  private static final int MAX_SOURCE_SET_WALK_DEPTH = 64;
   // Matches a package-lock v2/v3 key like "node_modules/foo" or
   // "node_modules/foo/node_modules/bar".
   private static final Pattern NPM_LOCK_KEY_PATTERN = Pattern.compile("^node_modules/(.+)$");
@@ -125,14 +144,13 @@ public final class DependencyParser {
           OrderEnumerator.orderEntries(module)
               .recursively()
               .librariesOnly()
-              .forEachLibrary(
-                  library -> {
-                    OsvPackage pkg = parseLibrary(library);
-                    if (pkg != null) {
-                      allPackages.add(pkg);
-                    }
-                    return true;
-                  });
+              .forEachLibrary(library -> {
+                OsvPackage pkg = parseLibrary(library);
+                if (pkg != null) {
+                  allPackages.add(pkg);
+                }
+                return true;
+              });
         }
       } catch (Exception e) {
         LOG.warn("Failed to parse module dependencies via OrderEnumerator", e);
@@ -215,26 +233,25 @@ public final class DependencyParser {
     if (packages != null && packages.isObject()) {
       packages
           .fieldNames()
-          .forEachRemaining(
-              key -> {
-                // The root project itself is keyed as "" ; nested node_modules entries carry the
-                // resolved version. Take the package name after the last "node_modules/" segment.
-                if (key.isEmpty() || !key.startsWith("node_modules/")) return;
-                Matcher m = NPM_LOCK_KEY_PATTERN.matcher(key);
-                if (!m.matches()) return;
-                String name = m.group(1);
-                int nested = name.lastIndexOf("/node_modules/");
-                if (nested >= 0) {
-                  name = name.substring(nested + "/node_modules/".length());
-                }
-                JsonNode versionNode = packages.get(key).get("version");
-                if (versionNode != null && !versionNode.isNull()) {
-                  String version = versionNode.asText().trim();
-                  if (!version.isEmpty() && !"undefined".equals(version)) {
-                    allPackages.add(new OsvPackage(name, Ecosystem.NPM, version));
-                  }
-                }
-              });
+          .forEachRemaining(key -> {
+            // The root project itself is keyed as "" ; nested node_modules entries carry the
+            // resolved version. Take the package name after the last "node_modules/" segment.
+            if (key.isEmpty() || !key.startsWith("node_modules/")) return;
+            Matcher m = NPM_LOCK_KEY_PATTERN.matcher(key);
+            if (!m.matches()) return;
+            String name = m.group(1);
+            int nested = name.lastIndexOf("/node_modules/");
+            if (nested >= 0) {
+              name = name.substring(nested + "/node_modules/".length());
+            }
+            JsonNode versionNode = packages.get(key).get("version");
+            if (versionNode != null && !versionNode.isNull()) {
+              String version = versionNode.asText().trim();
+              if (!version.isEmpty() && !"undefined".equals(version)) {
+                allPackages.add(new OsvPackage(name, Ecosystem.NPM, version));
+              }
+            }
+          });
       return;
     }
     // Lockfile v1: "dependencies" is a nested tree; each node has a "version" and optional "deps".
@@ -246,21 +263,20 @@ public final class DependencyParser {
 
   private static void collectNpmLockV1Dependencies(JsonNode deps, List<OsvPackage> allPackages) {
     deps.fieldNames()
-        .forEachRemaining(
-            name -> {
-              JsonNode node = deps.get(name);
-              JsonNode versionNode = node.get("version");
-              if (versionNode != null && !versionNode.isNull()) {
-                String version = versionNode.asText().trim();
-                if (!version.isEmpty()) {
-                  allPackages.add(new OsvPackage(name, Ecosystem.NPM, version));
-                }
-              }
-              JsonNode nested = node.get("dependencies");
-              if (nested != null && nested.isObject()) {
-                collectNpmLockV1Dependencies(nested, allPackages);
-              }
-            });
+        .forEachRemaining(name -> {
+          JsonNode node = deps.get(name);
+          JsonNode versionNode = node.get("version");
+          if (versionNode != null && !versionNode.isNull()) {
+            String version = versionNode.asText().trim();
+            if (!version.isEmpty()) {
+              allPackages.add(new OsvPackage(name, Ecosystem.NPM, version));
+            }
+          }
+          JsonNode nested = node.get("dependencies");
+          if (nested != null && nested.isObject()) {
+            collectNpmLockV1Dependencies(nested, allPackages);
+          }
+        });
   }
 
   /** Bounded recursive discovery of package.json files, skipping node_modules and .git. */
@@ -296,21 +312,20 @@ public final class DependencyParser {
     if (root.has(fieldName)) {
       JsonNode deps = root.get(fieldName);
       deps.fieldNames()
-          .forEachRemaining(
-              name -> {
-                // Only exact versions can be checked against OSV. Ranges (">=1.2 <2", "1.x",
-                // "~1.2") don't identify the installed version, and mangling them produces
-                // non-existent versions that OSV silently reports as safe.
-                String raw = deps.get(name).asText().trim();
-                String candidate =
-                    (raw.startsWith("^") || raw.startsWith("~")) ? raw.substring(1) : raw;
-                if (candidate.startsWith("v")) {
-                  candidate = candidate.substring(1);
-                }
-                if (NPM_EXACT_VERSION_PATTERN.matcher(candidate).matches()) {
-                  allPackages.add(new OsvPackage(name, Ecosystem.NPM, candidate));
-                }
-              });
+          .forEachRemaining(name -> {
+            // Only exact versions can be checked against OSV. Ranges (">=1.2 <2", "1.x",
+            // "~1.2") don't identify the installed version, and mangling them produces
+            // non-existent versions that OSV silently reports as safe.
+            String raw = deps.get(name).asText().trim();
+            String candidate =
+                (raw.startsWith("^") || raw.startsWith("~")) ? raw.substring(1) : raw;
+            if (candidate.startsWith("v")) {
+              candidate = candidate.substring(1);
+            }
+            if (NPM_EXACT_VERSION_PATTERN.matcher(candidate).matches()) {
+              allPackages.add(new OsvPackage(name, Ecosystem.NPM, candidate));
+            }
+          });
     }
   }
 
@@ -470,20 +485,19 @@ public final class DependencyParser {
                     pkg -> new PackageKey(pkg.name(), pkg.version(), pkg.ecosystem())));
 
     return grouped.values().stream()
-        .map(
-            group -> {
-              OsvPackage representative = group.getFirst();
-              Set<List<String>> allChains =
-                  group.stream()
-                      .map(OsvPackage::dependencyChains)
-                      .flatMap(Collection::stream)
-                      .collect(Collectors.toSet());
-              return new OsvPackage(
-                  representative.name(),
-                  representative.ecosystem(),
-                  representative.version(),
-                  allChains);
-            })
+        .map(group -> {
+          OsvPackage representative = group.getFirst();
+          Set<List<String>> allChains =
+              group.stream()
+                  .map(OsvPackage::dependencyChains)
+                  .flatMap(Collection::stream)
+                  .collect(Collectors.toSet());
+          return new OsvPackage(
+              representative.name(),
+              representative.ecosystem(),
+              representative.version(),
+              allChains);
+        })
         .sorted(Comparator.comparing(OsvPackage::name))
         .toList();
   }
@@ -623,6 +637,7 @@ public final class DependencyParser {
   private static List<OsvPackage> parseGradleDependencies(
       Collection<ExternalProjectInfo> projectInfos) {
     List<OsvPackage> dependencies = new ArrayList<>();
+    Set<String> warnedNoEdge = new HashSet<>();
 
     for (ExternalProjectInfo info : projectInfos) {
       DataNode<ProjectData> projectNode = info.getExternalProjectStructure();
@@ -632,54 +647,283 @@ public final class DependencyParser {
 
       // Check for libraries at project level
       processLibraryNodes(
-          ExternalSystemApiUtil.findAll(projectNode, ProjectKeys.LIBRARY), dependencies, chains);
+          ExternalSystemApiUtil.findAll(projectNode, ProjectKeys.LIBRARY),
+          dependencies,
+          chains,
+          warnedNoEdge);
 
       // Check for libraries at module level
       Collection<DataNode<ModuleData>> moduleNodes =
           ExternalSystemApiUtil.findAll(projectNode, ProjectKeys.MODULE);
       for (DataNode<ModuleData> moduleNode : moduleNodes) {
         processLibraryNodes(
-            ExternalSystemApiUtil.findAll(moduleNode, ProjectKeys.LIBRARY), dependencies, chains);
+            ExternalSystemApiUtil.findAll(moduleNode, ProjectKeys.LIBRARY),
+            dependencies,
+            chains,
+            warnedNoEdge);
       }
     }
     return dependencies;
   }
 
   /**
-   * Dependency chains of the Gradle model: every dependency node nests its transitive imports, so a
-   * coordinate reached below another one carries the path that pulls it in (e.g. platform test
-   * framework → its Jackson core) and can be labeled transitive instead of declared.
+   * Dependency chains of the Gradle model, merged from two sources: the {@code ExternalProject} the
+   * resolver hangs from the project node — its source-set model delivers the resolved graph with
+   * nested transitives (the only per-artifact source of recent platform syncs) — and, where the
+   * platform still delivers them, the module-level {@code LIBRARY_DEPENDENCY} nodes. The index key
+   * carries the version ({@code g:a:v}; {@code g:a} when an edge target has none) so two
+   * configurations resolving the same coordinate to different versions keep their own chains. The
+   * first step of a chain the build script never declares carries the platform pseudo-root — either
+   * a provided IDE-classpath edge or one of the toolchain's own testing source sets.
    */
   private static Map<String, Set<List<String>>> gradleDependencyChains(
       DataNode<ProjectData> projectNode) {
     Map<String, Set<List<String>>> chains = new HashMap<>();
+    collectSourceSetChains(projectNode, chains);
     for (DataNode<ModuleData> moduleNode :
         ExternalSystemApiUtil.findAll(projectNode, ProjectKeys.MODULE)) {
-      collectDependencyChains(moduleNode, new ArrayList<>(), chains);
+      collectDependencyChains(moduleNode, new ArrayList<>(), chains, isToolchainModule(moduleNode));
     }
     return chains;
   }
 
-  private static void collectDependencyChains(
-      DataNode<?> node, List<String> chain, Map<String, Set<List<String>>> chains) {
-    for (DataNode<LibraryDependencyData> dependency :
-        ExternalSystemApiUtil.getChildren(node, ProjectKeys.LIBRARY_DEPENDENCY)) {
-      LibraryData lib = dependency.getData().getTarget();
-      if (lib == null || lib.getGroupId() == null || lib.getArtifactId() == null) {
+  /**
+   * Chains from the ExternalProject node: one walk per source set over its resolved dependencies.
+   */
+  private static void collectSourceSetChains(
+      DataNode<ProjectData> projectNode, Map<String, Set<List<String>>> chains) {
+    DataNode<ExternalProject> externalProject =
+        ExternalSystemApiUtil.find(projectNode, ExternalProjectDataCache.KEY);
+    if (externalProject == null || externalProject.getData() == null) {
+      LOG.debug("No ExternalProject model in the Gradle sync data; no source-set chains.");
+      return;
+    }
+    Map<String, ? extends ExternalSourceSet> sourceSets = sourceSetsOf(externalProject.getData());
+    if (sourceSets == null || sourceSets.isEmpty()) {
+      return;
+    }
+    for (ExternalSourceSet sourceSet : sourceSets.values()) {
+      if (sourceSet == null || sourceSet.getDependencies() == null) {
         continue;
       }
-      String coordinate = lib.getGroupId() + ":" + lib.getArtifactId();
-      List<String> next = new ArrayList<>(chain);
-      next.add(coordinate);
-      chains.computeIfAbsent(coordinate, key -> new LinkedHashSet<>()).add(List.copyOf(next));
-      collectDependencyChains(dependency, next, chains);
+      boolean toolchain = isToolchainSourceSet(sourceSet);
+      for (ExternalDependency dependency : sourceSet.getDependencies()) {
+        collectSourceSetDependencyChains(dependency, List.of(), toolchain, chains, 0);
+      }
     }
+  }
+
+  @Nullable
+  private static Map<String, ? extends ExternalSourceSet> sourceSetsOf(ExternalProject project) {
+    GradleSourceSetModel model = project.getSourceSetModel();
+    if (model != null && model.getSourceSets() != null) {
+      return model.getSourceSets();
+    }
+    return project.getSourceSets();
+  }
+
+  private static void collectSourceSetDependencyChains(
+      ExternalDependency dependency,
+      List<String> chain,
+      boolean toolchainSourceSet,
+      Map<String, Set<List<String>>> chains,
+      int depth) {
+    if (dependency == null || depth > MAX_SOURCE_SET_WALK_DEPTH) {
+      return;
+    }
+    Collection<? extends ExternalDependency> children = dependency.getDependencies();
+    String coordinate = coordinateOf(dependency);
+    if (coordinate != null) {
+      List<String> next = new ArrayList<>(chain);
+      // Only the source-set root dependency carries the platform marker; nested ones inherit it.
+      if (next.isEmpty() && (toolchainSourceSet || isPlatformSourceSetDependency(dependency))) {
+        next.add(DependencyProvenance.PLATFORM_ROOT);
+      }
+      next.add(coordinate);
+      String version = dependency.getVersion();
+      String cacheKey = version != null ? coordinate + ":" + version : coordinate;
+      chains.computeIfAbsent(cacheKey, key -> new LinkedHashSet<>()).add(List.copyOf(next));
+      chain = next;
+    }
+    if (children == null) {
+      return;
+    }
+    for (ExternalDependency child : children) {
+      collectSourceSetDependencyChains(child, chain, toolchainSourceSet, chains, depth + 1);
+    }
+  }
+
+  /** Source set the intellijPlatform toolchain injects for its own testing task ("…testUi"): ... */
+  private static boolean isToolchainSourceSet(ExternalSourceSet sourceSet) {
+    String name = sourceSet.getName();
+    return name != null && name.endsWith("testUi");
+  }
+
+  private static boolean isPlatformSourceSetDependency(ExternalDependency dependency) {
+    String group = dependency.getGroup();
+    if (group != null && BUNDLED_LIBRARY_GROUPS.contains(group)) {
+      return true;
+    }
+    if ("PROVIDED".equals(dependency.getScope())) {
+      return true;
+    }
+    return hasExtractedIdeArtifactPath(dependency);
+  }
+
+  private static boolean hasExtractedIdeArtifactPath(ExternalDependency dependency) {
+    for (File artifact : artifactsOf(dependency)) {
+      if (isExtractedIdeJarPath(artifact == null ? null : artifact.getPath())) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  private static List<File> artifactsOf(ExternalDependency dependency) {
+    if (dependency instanceof ExternalMultiLibraryDependency multi) {
+      return multi.getFiles() == null ? List.of() : new ArrayList<>(multi.getFiles());
+    }
+    if (dependency instanceof ExternalLibraryDependency library) {
+      return library.getFile() == null ? List.of() : List.of(library.getFile());
+    }
+    return List.of();
+  }
+
+  @Nullable
+  private static String coordinateOf(ExternalDependency dependency) {
+    String group = dependency.getGroup();
+    String name = dependency.getName();
+    if (group != null && !group.isBlank() && name != null && !name.isBlank()) {
+      return group + ":" + name;
+    }
+    for (File artifact : artifactsOf(dependency)) {
+      String coordinate = coordinateFromArtifactPath(artifact == null ? null : artifact.getPath());
+      if (coordinate != null) {
+        return coordinate;
+      }
+    }
+    return null;
+  }
+
+  /**
+   * Source set the intellijPlatform toolchain injects for its own testing task ("…testUi"): the
+   * build script never declares it and its whole classpath comes from the IDE platform.
+   */
+  private static boolean isToolchainModule(DataNode<ModuleData> moduleNode) {
+    ModuleData data = moduleNode.getData();
+    if (data == null) {
+      return false;
+    }
+    String name = data.getModuleName() != null ? data.getModuleName() : data.getId();
+    return name != null && (name.endsWith(".testUi") || name.endsWith(":testUi"));
+  }
+
+  private static void collectDependencyChains(
+      DataNode<?> node,
+      List<String> chain,
+      Map<String, Set<List<String>>> chains,
+      boolean toolchainModule) {
+    for (DataNode<LibraryDependencyData> dependency :
+        ExternalSystemApiUtil.getChildren(node, ProjectKeys.LIBRARY_DEPENDENCY)) {
+      LibraryDependencyData edgeData = dependency.getData();
+      LibraryData lib = edgeData.getTarget();
+      if (lib == null) {
+        continue;
+      }
+      String coordinate =
+          lib.getGroupId() != null && lib.getArtifactId() != null
+              ? lib.getGroupId() + ":" + lib.getArtifactId()
+              : recoverCoordinate(lib);
+      if (coordinate == null) {
+        continue;
+      }
+      List<String> next = new ArrayList<>(chain);
+      // Only the module-level (root) edge carries the platform marker; nested edges inherit it.
+      if (next.isEmpty() && (toolchainModule || isPlatformEdge(edgeData, lib))) {
+        next.add(DependencyProvenance.PLATFORM_ROOT);
+      }
+      next.add(coordinate);
+      String version = lib.getVersion();
+      String cacheKey = version != null ? coordinate + ":" + version : coordinate;
+      chains.computeIfAbsent(cacheKey, key -> new LinkedHashSet<>()).add(List.copyOf(next));
+      collectDependencyChains(dependency, next, chains, toolchainModule);
+    }
+  }
+
+  /** Platform edge: IDE-toolchain classpath the build script never declares. */
+  private static boolean isPlatformEdge(LibraryDependencyData edge, LibraryData target) {
+    return edge.getScope() == DependencyScope.PROVIDED || isPlatformLibraryTarget(target);
+  }
+
+  private static boolean isPlatformLibraryTarget(LibraryData lib) {
+    String group = lib.getGroupId();
+    if (group != null && BUNDLED_LIBRARY_GROUPS.contains(group)) {
+      return true;
+    }
+    Set<String> binaries = lib.getPaths(LibraryPathType.BINARY);
+    if (binaries == null) {
+      return false;
+    }
+    for (String binary : binaries) {
+      if (isExtractedIdeJarPath(binary)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /** Jar inside the IDE distribution extracted by the Gradle toolchain transforms. */
+  private static boolean isExtractedIdeJarPath(@Nullable String path) {
+    return path != null && EXTRACTED_IDE_JAR_PATTERN.matcher(path.replace('\\', '/')).matches();
+  }
+
+  /**
+   * Coordinate recovery for targets whose group/artifact were merged away by the platform's
+   * duplicate-id handling: the artifact jar survives in the library's binary paths, so the cache it
+   * lives under states the real {code group:artifact}. {@code null} when no path matches.
+   */
+  @Nullable
+  private static String recoverCoordinate(LibraryData lib) {
+    Set<String> binaries = lib.getPaths(LibraryPathType.BINARY);
+    if (binaries == null) {
+      return null;
+    }
+    for (String binary : binaries) {
+      if (binary != null) {
+        String coordinate = coordinateFromArtifactPath(binary);
+        if (coordinate != null) {
+          return coordinate;
+        }
+      }
+    }
+    return null;
+  }
+
+  /**
+   * {@code group:artifact} stated by the cache path {@code coordinate} lives under; null otherwise.
+   */
+  @Nullable
+  private static String coordinateFromArtifactPath(@Nullable String path) {
+    if (path == null) {
+      return null;
+    }
+    String normalized = path.replace('\\', '/');
+    Matcher gradleCache = GRADLE_CACHE_PATTERN.matcher(normalized);
+    if (gradleCache.matches()) {
+      return gradleCache.group(1) + ":" + gradleCache.group(2);
+    }
+    Matcher mavenRepo = MAVEN_REPO_PATTERN.matcher(normalized);
+    if (mavenRepo.matches()) {
+      return mavenRepo.group(1).replace('/', '.') + ":" + mavenRepo.group(2);
+    }
+    return null;
   }
 
   private static void processLibraryNodes(
       Collection<DataNode<LibraryData>> libraryNodes,
       List<OsvPackage> dependencies,
-      Map<String, Set<List<String>>> chains) {
+      Map<String, Set<List<String>>> chains,
+      Set<String> warnedNoEdge) {
     for (DataNode<LibraryData> libNode : libraryNodes) {
       LibraryData data = libNode.getData();
       String group = data.getGroupId();
@@ -688,11 +932,40 @@ public final class DependencyParser {
 
       if (group != null && artifact != null && version != null) {
         String fullName = group + ":" + artifact;
-        Set<List<String>> dependencyChains =
-            chains.getOrDefault(fullName, Set.of(List.of(fullName)));
+        Set<List<String>> dependencyChains = chainsFor(chains, fullName, version, warnedNoEdge);
         dependencies.add(new OsvPackage(fullName, Ecosystem.MAVEN, version, dependencyChains));
       }
     }
+  }
+
+  /**
+   * Chain lookup with a graceful degradation: the exact versioned chains first, then the
+   * unversioned ones (edges whose target carried no version), and finally a legacy single-node
+   * chain for coordinates the Gradle model reached with no edge at all — announced once per
+   * coordinate so a silently degraded provenance cost stays visible.
+   */
+  private static Set<List<String>> chainsFor(
+      Map<String, Set<List<String>>> chains,
+      String fullName,
+      String version,
+      Set<String> warnedNoEdge) {
+    Set<List<String>> versioned = chains.get(fullName + ":" + version);
+    if (versioned != null) {
+      return versioned;
+    }
+    Set<List<String>> unversioned = chains.get(fullName);
+    if (unversioned != null) {
+      return unversioned;
+    }
+    if (warnedNoEdge.add(fullName + ":" + version)) {
+      LOG.warn(
+          "No Gradle dependency edge or jar path found for "
+              + fullName
+              + ":"
+              + version
+              + "; falling back to a single-node chain");
+    }
+    return Set.of(List.of(fullName));
   }
 
   private static OsvPackage parseLibrary(Library library) {

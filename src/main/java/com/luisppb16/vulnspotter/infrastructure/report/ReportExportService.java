@@ -10,10 +10,12 @@ package com.luisppb16.vulnspotter.infrastructure.report;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.luisppb16.vulnspotter.application.service.TransitiveRemediationService;
 import com.luisppb16.vulnspotter.application.service.VulnerabilityScannerService;
 import com.luisppb16.vulnspotter.domain.model.DependencyProvenance;
 import com.luisppb16.vulnspotter.domain.model.Ecosystem;
 import com.luisppb16.vulnspotter.domain.model.OsvVulnerability;
+import com.luisppb16.vulnspotter.domain.model.ParentRemediation;
 import com.luisppb16.vulnspotter.domain.service.FixedVersionResolver;
 import com.luisppb16.vulnspotter.domain.service.SeverityAnalyzer;
 import com.luisppb16.vulnspotter.infrastructure.osv.ProjectConstants;
@@ -24,10 +26,15 @@ import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
+import java.util.function.Function;
 import java.util.stream.Collectors;
+import org.jetbrains.annotations.Nullable;
 
 /** Exports vulnerability reports into HTML, PDF, CSV, JSON, SARIF and Markdown files. */
 public final class ReportExportService {
@@ -58,18 +65,30 @@ public final class ReportExportService {
     Files.writeString(outputPath, json, StandardCharsets.UTF_8);
   }
 
+  /** Exports a structured JSON report without parent-remediation lookups. */
+  public static void exportJsonReport(
+      String projectName, List<VulnerabilityScannerService.ScanResult> scanResults, Path outputPath)
+      throws IOException {
+    exportJsonReport(projectName, scanResults, null, outputPath);
+  }
+
   /**
    * Exports a structured JSON report: tool metadata, generation timestamp, roll-up summary and one
    * entry per scanned dependency with its full vulnerability breakdown (severity, CVSS, affected
-   * ranges, fixed version, references).
+   * ranges, fixed version, references). {@code resolver} (nullable, called off the EDT) adds each
+   * transitive dependency's {@code parentVersions} and {@code parentRemediations}.
    */
   public static void exportJsonReport(
-      String projectName, List<VulnerabilityScannerService.ScanResult> scanResults, Path outputPath)
+      String projectName,
+      List<VulnerabilityScannerService.ScanResult> scanResults,
+      @Nullable TransitiveRemediationService resolver,
+      Path outputPath)
       throws IOException {
     List<VulnerabilityScannerService.ScanResult> results =
         scanResults == null ? List.of() : scanResults;
     VulnerabilityScannerService.ScanSummary rollUp =
         VulnerabilityScannerService.ScanSummary.of(results);
+    Map<String, String> versionIndex = VulnerabilityScannerService.resolvedVersionIndex(results);
 
     ObjectNode root = MAPPER.createObjectNode();
     ObjectNode tool = root.putObject("tool");
@@ -98,11 +117,29 @@ public final class ReportExportService {
         if (!provenance.transitiveRoots().isEmpty()) {
           ArrayNode roots = item.putArray("transitiveRoots");
           provenance.transitiveRoots().forEach(roots::add);
+          appendParentVersions(item, provenance.transitiveRoots(), versionIndex);
         }
       }
-      FixedVersionResolver.recommendUpgrade(
-              sr.vulnerabilities(), sr.pkg().name(), sr.pkg().version())
-          .ifPresent(fix -> item.put("recommendedFix", fix));
+      if (!sr.pkg().dependencyChains().isEmpty()) {
+        ArrayNode chains = item.putArray("dependencyChains");
+        sr.pkg()
+            .dependencyChains()
+            .forEach(chain -> {
+              ArrayNode chainNode = chains.addArray();
+              chain.forEach(chainNode::add);
+            });
+      }
+      Optional<String> recommendedFix =
+          FixedVersionResolver.recommendUpgrade(
+              sr.vulnerabilities(), sr.pkg().name(), sr.pkg().version());
+      recommendedFix.ifPresent(fix -> item.put("recommendedFix", fix));
+      if (sr.vulnerable()) {
+        appendParentRemediations(
+            item,
+            resolver == null
+                ? List.of()
+                : resolver.resolve(sr.pkg(), recommendedFix.orElse(null), versionIndex));
+      }
       ArrayNode vulnsArr = item.putArray("vulnerabilities");
       for (OsvVulnerability vuln : sr.vulnerabilities()) {
         ObjectNode v = vulnsArr.addObject();
@@ -140,18 +177,30 @@ public final class ReportExportService {
     writeJson(root, outputPath);
   }
 
+  /** Exports the CSV report without parent-remediation lookups. */
+  public static void exportCsv(
+      List<VulnerabilityScannerService.ScanResult> scanResults, Path outputPath)
+      throws IOException {
+    exportCsv(scanResults, null, outputPath);
+  }
+
   /**
    * CSV with one row per (dependency, vulnerability) so each finding is independently triageable. A
    * UTF-8 BOM is prepended so Excel opens it with the right encoding, and formula-injection
-   * characters are neutralized.
+   * characters are neutralized. {@code resolver} (nullable, called off the EDT) fills the {@code
+   * Parent Fix} column for transitive dependencies.
    */
   public static void exportCsv(
-      List<VulnerabilityScannerService.ScanResult> scanResults, Path outputPath)
+      List<VulnerabilityScannerService.ScanResult> scanResults,
+      @Nullable TransitiveRemediationService resolver,
+      Path outputPath)
       throws IOException {
     StringBuilder csv = new StringBuilder();
     csv.append(
         "Package,Version,Ecosystem,Vulnerability ID,CVE Aliases,Severity,CVSS,"
-            + "Affected Range,Recommended Fix,Summary,Provenance\r\n");
+            + "Affected Range,Recommended Fix,Summary,Provenance,Dependency Paths,Parent Fix\r\n");
+    Map<String, String> versionIndex =
+        VulnerabilityScannerService.resolvedVersionIndex(scanResults);
     for (VulnerabilityScannerService.ScanResult sr : scanResults) {
       String recommendedFix =
           sr.vulnerable()
@@ -160,6 +209,8 @@ public final class ReportExportService {
                   .orElse("")
               : "";
       String provenance = provenanceValue(sr.pkg().dependencyChains());
+      String dependencyPaths = dependencyPathsValue(sr.pkg().dependencyChains());
+      String parentFix = parentFixCell(sr, versionIndex, resolver, recommendedFix);
       if (!sr.vulnerable() || sr.vulnerabilities().isEmpty()) {
         csv.append(csvField(sr.pkg().name()))
             .append(',')
@@ -171,6 +222,10 @@ public final class ReportExportService {
             .append(csvField(recommendedFix))
             .append(',')
             .append(csvField(provenance))
+            .append(',')
+            .append(csvField(dependencyPaths))
+            .append(',')
+            .append(csvField(parentFix))
             .append(",\r\n");
         continue;
       }
@@ -207,6 +262,10 @@ public final class ReportExportService {
             .append(csvField(vuln.summary() == null ? "" : vuln.summary()))
             .append(',')
             .append(csvField(provenance))
+            .append(',')
+            .append(csvField(dependencyPaths))
+            .append(',')
+            .append(csvField(parentFix))
             .append("\r\n");
       }
     }
@@ -229,8 +288,21 @@ public final class ReportExportService {
     return "\"" + v.replace("\"", "\"\"") + "\"";
   }
 
+  /** Exports the SARIF report without parent-remediation lookups. */
   public static void exportSarif(
       List<VulnerabilityScannerService.ScanResult> scanResults, Path outputPath)
+      throws IOException {
+    exportSarif(scanResults, null, outputPath);
+  }
+
+  /**
+   * SARIF export; {@code resolver} (nullable, called off the EDT) adds the {@code
+   * parentRemediations} properties of each transitive finding.
+   */
+  public static void exportSarif(
+      List<VulnerabilityScannerService.ScanResult> scanResults,
+      @Nullable TransitiveRemediationService resolver,
+      Path outputPath)
       throws IOException {
     ObjectNode sarif = MAPPER.createObjectNode();
     sarif.put("version", "2.1.0");
@@ -258,6 +330,8 @@ public final class ReportExportService {
     invocations.put("endTimeUtc", VulnerabilityReportBuilder.nowTimestamp());
 
     Set<String> ruleIds = new LinkedHashSet<>();
+    Map<String, String> versionIndex =
+        VulnerabilityScannerService.resolvedVersionIndex(scanResults);
     ArrayNode results = run.putArray("results");
     for (VulnerabilityScannerService.ScanResult sr : scanResults) {
       if (!sr.vulnerable()) continue;
@@ -302,8 +376,24 @@ public final class ReportExportService {
             provenance.transitiveRoots().forEach(roots::add);
           }
         }
-        FixedVersionResolver.recommendUpgrade(List.of(vuln), sr.pkg().name(), sr.pkg().version())
-            .ifPresent(fix -> properties.put("recommendedFix", fix));
+        if (!sr.pkg().dependencyChains().isEmpty()) {
+          ArrayNode chains = properties.putArray("dependencyChains");
+          sr.pkg()
+              .dependencyChains()
+              .forEach(chain -> {
+                ArrayNode chainNode = chains.addArray();
+                chain.forEach(chainNode::add);
+              });
+        }
+        Optional<String> recommendedFix =
+            FixedVersionResolver.recommendUpgrade(
+                List.of(vuln), sr.pkg().name(), sr.pkg().version());
+        recommendedFix.ifPresent(fix -> properties.put("recommendedFix", fix));
+        appendParentRemediations(
+            properties,
+            resolver == null
+                ? List.of()
+                : resolver.resolve(sr.pkg(), recommendedFix.orElse(null), versionIndex));
         FixedVersionResolver.Resolution resolution =
             FixedVersionResolver.resolveWithRanges(vuln, sr.pkg().name(), sr.pkg().version());
         if (!resolution.branches().isEmpty()) {
@@ -328,10 +418,24 @@ public final class ReportExportService {
   public static void exportMarkdown(
       String projectName, List<VulnerabilityScannerService.ScanResult> scanResults, Path outputPath)
       throws IOException {
+    exportMarkdown(projectName, scanResults, null, outputPath);
+  }
+
+  /**
+   * Plain Markdown report; {@code resolver} (nullable, called off the EDT) adds a {@code Transitive
+   * fix} line to each transitive package whose fixing parent is deducible.
+   */
+  public static void exportMarkdown(
+      String projectName,
+      List<VulnerabilityScannerService.ScanResult> scanResults,
+      @Nullable TransitiveRemediationService resolver,
+      Path outputPath)
+      throws IOException {
     List<VulnerabilityScannerService.ScanResult> results =
         scanResults == null ? List.of() : scanResults;
     VulnerabilityScannerService.ScanSummary rollUp =
         VulnerabilityScannerService.ScanSummary.of(results);
+    Map<String, String> versionIndex = VulnerabilityScannerService.resolvedVersionIndex(results);
 
     StringBuilder md = new StringBuilder();
     md.append("# VulnSpotter Vulnerability Report\n\n");
@@ -363,7 +467,37 @@ public final class ReportExportService {
           .append(")\n");
       DependencyProvenance provenance = DependencyProvenance.of(sr.pkg().dependencyChains());
       if (provenance.known()) {
-        md.append("Dependency provenance: ").append(provenance.label()).append('\n');
+        md.append("Dependency provenance: ").append(provenance.label(versionIndex)).append('\n');
+      }
+      String tree =
+          DependencyTreeRenderer.renderText(
+              sr.pkg().dependencyChains(),
+              versionIndex,
+              sr.pkg().version(),
+              projectName,
+              DependencyTreeRenderer.Glyphs.BOX);
+      if (!tree.isEmpty()) {
+        md.append("Dependency tree:\n```\n").append(tree).append("```\n");
+      }
+      List<ParentRemediation> remediations =
+          resolver == null ? List.of() : resolver.resolve(sr.pkg(), fix, versionIndex);
+      for (ParentRemediation remediation : remediations) {
+        if (remediation.targetVersion() == null) {
+          continue;
+        }
+        md.append("Transitive fix: upgrade `").append(remediation.root()).append("`");
+        if (remediation.currentVersion() != null) {
+          md.append(" from ").append(remediation.currentVersion());
+        }
+        md.append(" to **").append(remediation.targetVersion()).append("**");
+        if (remediation.shipsChildVersion() != null) {
+          md.append(" (ships `")
+              .append(sr.pkg().name())
+              .append("` ")
+              .append(remediation.shipsChildVersion())
+              .append(')');
+        }
+        md.append('\n');
       }
       md.append("Recommended fix: **").append(fix).append("**\n\n");
       for (OsvVulnerability vuln : sr.vulnerabilities()) {
@@ -432,14 +566,13 @@ public final class ReportExportService {
   private static String branchCells(
       FixedVersionResolver.Resolution resolution, String installedVersion) {
     return resolution.branches().stream()
-        .map(
-            branch -> {
-              String cell = branchText(branch);
-              if (branch.containsInstalledVersion()) {
-                cell = cell + " (install: " + installedVersion + ")";
-              }
-              return cell;
-            })
+        .map(branch -> {
+          String cell = branchText(branch);
+          if (branch.containsInstalledVersion()) {
+            cell = cell + " (install: " + installedVersion + ")";
+          }
+          return cell;
+        })
         .collect(Collectors.joining("; "));
   }
 
@@ -466,5 +599,96 @@ public final class ReportExportService {
   private static String provenanceValue(Set<List<String>> chains) {
     DependencyProvenance provenance = DependencyProvenance.of(chains);
     return provenance.known() ? provenance.shortLabel() : "";
+  }
+
+  /** Chains as "a > b > c" segments for the CSV {@code Dependency Paths} column, sorted. */
+  private static String dependencyPathsValue(Set<List<String>> chains) {
+    return chains.stream()
+        .map(chain -> String.join(" > ", chain))
+        .sorted()
+        .collect(Collectors.joining(" | "));
+  }
+
+  /** {@code parentVersions} object of the scan-resolved current version per transitive root. */
+  private static void appendParentVersions(
+      ObjectNode node, List<String> roots, Map<String, String> versionIndex) {
+    Map<String, String> known = new LinkedHashMap<>();
+    for (String root : roots) {
+      String version = versionIndex.get(root);
+      if (version != null) {
+        known.put(root, version);
+      }
+    }
+    if (!known.isEmpty()) {
+      ObjectNode parentVersions = node.putObject("parentVersions");
+      known.forEach(parentVersions::put);
+    }
+  }
+
+  /** {@code parentRemediations} array; every root, with the deduced target when found. */
+  private static void appendParentRemediations(
+      ObjectNode node, List<ParentRemediation> remediations) {
+    if (remediations.isEmpty()) {
+      return;
+    }
+    ArrayNode parentRemediations = node.putArray("parentRemediations");
+    for (ParentRemediation remediation : remediations) {
+      ObjectNode item = parentRemediations.addObject();
+      item.put("root", remediation.root());
+      if (remediation.currentVersion() != null) {
+        item.put("currentVersion", remediation.currentVersion());
+      }
+      if (remediation.targetVersion() != null) {
+        item.put("targetVersion", remediation.targetVersion());
+      }
+      if (remediation.shipsChildVersion() != null) {
+        item.put("shipsChildVersion", remediation.shipsChildVersion());
+      }
+    }
+  }
+
+  /**
+   * {@code Parent Fix} cell per transitive root: {@code "root 1.2.3 → 4.1.0 (ships 2.17.1)"} when
+   * the fixing parent version was deduced, the versioned root otherwise; empty when the scan has no
+   * chain data.
+   */
+  private static String parentFixCell(
+      VulnerabilityScannerService.ScanResult sr,
+      Map<String, String> versionIndex,
+      @Nullable TransitiveRemediationService resolver,
+      String recommendedFix) {
+    DependencyProvenance provenance = DependencyProvenance.of(sr.pkg().dependencyChains());
+    if (!provenance.known() || provenance.transitiveRoots().isEmpty()) {
+      return "";
+    }
+    Map<String, ParentRemediation> byRoot =
+        (resolver == null
+                ? List.<ParentRemediation>of()
+                : resolver.resolve(
+                    sr.pkg(), recommendedFix.isBlank() ? null : recommendedFix, versionIndex))
+            .stream()
+                .collect(
+                    Collectors.toMap(
+                        ParentRemediation::root, Function.identity(), (first, second) -> first));
+    return provenance.transitiveRoots().stream()
+        .map(root -> parentRootText(root, versionIndex, byRoot.get(root)))
+        .collect(Collectors.joining("; "));
+  }
+
+  private static String parentRootText(
+      String root, Map<String, String> versionIndex, @Nullable ParentRemediation remediation) {
+    String current =
+        remediation != null && remediation.currentVersion() != null
+            ? remediation.currentVersion()
+            : versionIndex.get(root);
+    String text = current == null ? root : root + " " + current;
+    if (remediation == null || remediation.targetVersion() == null) {
+      return text;
+    }
+    text += " → " + remediation.targetVersion();
+    if (remediation.shipsChildVersion() != null) {
+      text += " (ships " + remediation.shipsChildVersion() + ")";
+    }
+    return text;
   }
 }

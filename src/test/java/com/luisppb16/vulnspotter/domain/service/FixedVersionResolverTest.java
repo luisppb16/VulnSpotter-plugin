@@ -128,11 +128,10 @@ class FixedVersionResolverTest {
       // Then: three 2.x branches, none containing the installed version, tools branches absent.
       assertThat(resolution.branches()).hasSize(3);
       assertThat(resolution.branches())
-          .allSatisfy(
-              branch -> {
-                assertThat(branch.containsInstalledVersion()).isFalse();
-                assertThat(branch.fixedVersion()).isIn("2.21.7", "2.22.3", "2.18.11");
-              });
+          .allSatisfy(branch -> {
+            assertThat(branch.containsInstalledVersion()).isFalse();
+            assertThat(branch.fixedVersion()).isIn("2.21.7", "2.22.3", "2.18.11");
+          });
       assertThat(resolution.fixedVersion()).isEqualTo("2.21.7, 2.22.3, 2.18.11");
     }
 

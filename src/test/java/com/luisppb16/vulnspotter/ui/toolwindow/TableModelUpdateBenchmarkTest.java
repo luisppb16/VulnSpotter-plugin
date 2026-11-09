@@ -9,10 +9,11 @@ package com.luisppb16.vulnspotter.ui.toolwindow;
 
 import java.util.Vector;
 import javax.swing.table.DefaultTableModel;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
+@Tag("benchmark")
 public class TableModelUpdateBenchmarkTest {
-
   private static final int ROW_COUNT = 10000;
   private static final String[] COLUMN_NAMES = {"Severity", "Dependency", "Version", "Vulns"};
 

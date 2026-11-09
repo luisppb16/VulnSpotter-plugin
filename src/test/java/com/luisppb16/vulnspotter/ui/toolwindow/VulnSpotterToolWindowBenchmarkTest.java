@@ -13,8 +13,10 @@ import java.util.Locale;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
+@Tag("benchmark")
 public class VulnSpotterToolWindowBenchmarkTest {
 
   private static final NumberFormat STATIC_FORMAT = NumberFormat.getInstance(Locale.ROOT);
