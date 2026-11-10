@@ -106,16 +106,13 @@ intellijPlatform {
         ides {
             recommended()
         }
-        // ExternalProjectDataCache.KEY and ExternalProject.getSourceSetModel() (@Internal) plus
-        // PathManager.getSystemPath() (@Obsolete) are the only public route to the resolved Gradle
-        // dependency graph on recent platform syncs; there is no non-internal alternative. The
-        // list is the plugin default minus INTERNAL_API_USAGES and OBSOLETE_API_USAGES.
         failureLevel = [
             FailureLevel.COMPATIBILITY_WARNINGS,
             FailureLevel.COMPATIBILITY_PROBLEMS,
             FailureLevel.DEPRECATED_API_USAGES,
             FailureLevel.SCHEDULED_FOR_REMOVAL_API_USAGES,
             FailureLevel.EXPERIMENTAL_API_USAGES,
+            FailureLevel.INTERNAL_API_USAGES,
             FailureLevel.OVERRIDE_ONLY_API_USAGES,
             FailureLevel.NON_EXTENDABLE_API_USAGES,
             FailureLevel.PLUGIN_STRUCTURE_WARNINGS,

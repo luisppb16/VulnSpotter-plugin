@@ -64,7 +64,6 @@ import org.jetbrains.plugins.gradle.model.ExternalLibraryDependency;
 import org.jetbrains.plugins.gradle.model.ExternalMultiLibraryDependency;
 import org.jetbrains.plugins.gradle.model.ExternalProject;
 import org.jetbrains.plugins.gradle.model.ExternalSourceSet;
-import org.jetbrains.plugins.gradle.model.GradleSourceSetModel;
 import org.jetbrains.plugins.gradle.service.project.data.ExternalProjectDataCache;
 import org.jetbrains.plugins.gradle.util.GradleConstants;
 
@@ -126,7 +125,7 @@ public final class DependencyParser {
           ProjectDataManager.getInstance()
               .getExternalProjectsData(project, GradleConstants.SYSTEM_ID);
       if (!gradleProjects.isEmpty()) {
-        allPackages.addAll(parseGradleDependencies(gradleProjects));
+        allPackages.addAll(parseGradleDependencies(project, gradleProjects));
         isManagedProject = true;
       }
     } catch (Exception e) {
@@ -635,7 +634,9 @@ public final class DependencyParser {
   }
 
   private static List<OsvPackage> parseGradleDependencies(
-      Collection<ExternalProjectInfo> projectInfos) {
+      Project project, Collection<ExternalProjectInfo> projectInfos) {
+    ExternalProjectDataCache externalProjectDataCache =
+        ExternalProjectDataCache.getInstance(project);
     List<OsvPackage> dependencies = new ArrayList<>();
     Set<String> warnedNoEdge = new HashSet<>();
 
@@ -643,7 +644,13 @@ public final class DependencyParser {
       DataNode<ProjectData> projectNode = info.getExternalProjectStructure();
       if (projectNode == null) continue;
 
-      Map<String, Set<List<String>>> chains = gradleDependencyChains(projectNode);
+      String externalProjectPath = info.getExternalProjectPath();
+      ExternalProject rootProject =
+          externalProjectPath == null
+              ? null
+              : externalProjectDataCache.getRootExternalProject(externalProjectPath);
+
+      Map<String, Set<List<String>>> chains = gradleDependencyChains(projectNode, rootProject);
 
       // Check for libraries at project level
       processLibraryNodes(
@@ -667,19 +674,20 @@ public final class DependencyParser {
   }
 
   /**
-   * Dependency chains of the Gradle model, merged from two sources: the {@code ExternalProject} the
-   * resolver hangs from the project node — its source-set model delivers the resolved graph with
-   * nested transitives (the only per-artifact source of recent platform syncs) — and, where the
-   * platform still delivers them, the module-level {@code LIBRARY_DEPENDENCY} nodes. The index key
-   * carries the version ({@code g:a:v}; {@code g:a} when an edge target has none) so two
-   * configurations resolving the same coordinate to different versions keep their own chains. The
-   * first step of a chain the build script never declares carries the platform pseudo-root — either
-   * a provided IDE-classpath edge or one of the toolchain's own testing source sets.
+   * Dependency chains of the Gradle model, merged from two sources: the {@code ExternalProject}
+   * cached in {@code ExternalProjectDataCache} — its {@code getSourceSets()} map delivers the
+   * resolved graph with nested transitives (the only per-artifact source of recent platform syncs)
+   * — and, where the platform still delivers them, the module-level {@code LIBRARY_DEPENDENCY}
+   * nodes. The index key carries the version ({@code g:a:v}; {@code g:a} when an edge target has
+   * none) so two configurations resolving the same coordinate to different versions keep their own
+   * chains. The first step of a chain the build script never declares carries the platform
+   * pseudo-root — either a provided IDE-classpath edge or one of the toolchain's own testing source
+   * sets.
    */
   private static Map<String, Set<List<String>>> gradleDependencyChains(
-      DataNode<ProjectData> projectNode) {
+      DataNode<ProjectData> projectNode, @Nullable ExternalProject externalProject) {
     Map<String, Set<List<String>>> chains = new HashMap<>();
-    collectSourceSetChains(projectNode, chains);
+    collectSourceSetChains(externalProject, chains);
     for (DataNode<ModuleData> moduleNode :
         ExternalSystemApiUtil.findAll(projectNode, ProjectKeys.MODULE)) {
       collectDependencyChains(moduleNode, new ArrayList<>(), chains, isToolchainModule(moduleNode));
@@ -688,17 +696,15 @@ public final class DependencyParser {
   }
 
   /**
-   * Chains from the ExternalProject node: one walk per source set over its resolved dependencies.
+   * Chains from the cached ExternalProject: one walk per source set over its resolved dependencies.
    */
   private static void collectSourceSetChains(
-      DataNode<ProjectData> projectNode, Map<String, Set<List<String>>> chains) {
-    DataNode<ExternalProject> externalProject =
-        ExternalSystemApiUtil.find(projectNode, ExternalProjectDataCache.KEY);
-    if (externalProject == null || externalProject.getData() == null) {
+      @Nullable ExternalProject externalProject, Map<String, Set<List<String>>> chains) {
+    if (externalProject == null) {
       LOG.debug("No ExternalProject model in the Gradle sync data; no source-set chains.");
       return;
     }
-    Map<String, ? extends ExternalSourceSet> sourceSets = sourceSetsOf(externalProject.getData());
+    Map<String, ? extends ExternalSourceSet> sourceSets = externalProject.getSourceSets();
     if (sourceSets == null || sourceSets.isEmpty()) {
       return;
     }
@@ -711,15 +717,6 @@ public final class DependencyParser {
         collectSourceSetDependencyChains(dependency, List.of(), toolchain, chains, 0);
       }
     }
-  }
-
-  @Nullable
-  private static Map<String, ? extends ExternalSourceSet> sourceSetsOf(ExternalProject project) {
-    GradleSourceSetModel model = project.getSourceSetModel();
-    if (model != null && model.getSourceSets() != null) {
-      return model.getSourceSets();
-    }
-    return project.getSourceSets();
   }
 
   private static void collectSourceSetDependencyChains(

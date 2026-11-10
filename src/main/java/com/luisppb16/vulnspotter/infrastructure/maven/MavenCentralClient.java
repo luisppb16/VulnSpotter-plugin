@@ -68,7 +68,7 @@ public class MavenCentralClient {
   @Nullable
   private static Path defaultCacheRoot() {
     try {
-      return Path.of(PathManager.getSystemPath(), "vulnspotter", "maven-central");
+      return PathManager.getSystemDir().resolve("vulnspotter").resolve("maven-central");
     } catch (Exception | Error e) {
       return null;
     }

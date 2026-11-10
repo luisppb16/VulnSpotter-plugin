@@ -9,6 +9,7 @@ package com.luisppb16.vulnspotter.infrastructure.parser;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
@@ -44,7 +45,6 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import org.jetbrains.annotations.Nullable;
 import org.jetbrains.idea.maven.model.MavenArtifact;
 import org.jetbrains.idea.maven.model.MavenArtifactNode;
 import org.jetbrains.idea.maven.model.MavenArtifactState;
@@ -55,7 +55,6 @@ import org.jetbrains.plugins.gradle.model.ExternalProject;
 import org.jetbrains.plugins.gradle.model.ExternalProjectDependency;
 import org.jetbrains.plugins.gradle.model.ExternalSourceSet;
 import org.jetbrains.plugins.gradle.model.FileCollectionDependency;
-import org.jetbrains.plugins.gradle.model.GradleSourceSetModel;
 import org.jetbrains.plugins.gradle.service.project.data.ExternalProjectDataCache;
 import org.jetbrains.plugins.gradle.util.GradleConstants;
 import org.junit.jupiter.api.AfterEach;
@@ -83,12 +82,14 @@ class DependencyParserTest {
   @Mock private ModuleManager moduleManager;
   @Mock private LibraryTablesRegistrar libraryTablesRegistrar;
   @Mock private LibraryTable libraryTable;
+  @Mock private ExternalProjectDataCache externalProjectDataCache;
 
   private MockedStatic<MavenProjectsManager> mavenStatic;
   private MockedStatic<ProjectDataManager> projectDataStatic;
   private MockedStatic<ModuleManager> moduleManagerStatic;
   private MockedStatic<LibraryTablesRegistrar> libraryRegistrarStatic;
   private MockedStatic<ExternalSystemApiUtil> externalSystemStatic;
+  private MockedStatic<ExternalProjectDataCache> externalProjectCacheStatic;
 
   @BeforeEach
   void setUp() {
@@ -97,6 +98,7 @@ class DependencyParserTest {
     moduleManagerStatic = mockStatic(ModuleManager.class);
     libraryRegistrarStatic = mockStatic(LibraryTablesRegistrar.class);
     externalSystemStatic = mockStatic(ExternalSystemApiUtil.class);
+    externalProjectCacheStatic = mockStatic(ExternalProjectDataCache.class);
 
     mavenStatic
         .when(() -> MavenProjectsManager.getInstance(project))
@@ -106,6 +108,9 @@ class DependencyParserTest {
     libraryRegistrarStatic
         .when(LibraryTablesRegistrar::getInstance)
         .thenReturn(libraryTablesRegistrar);
+    externalProjectCacheStatic
+        .when(() -> ExternalProjectDataCache.getInstance(project))
+        .thenReturn(externalProjectDataCache);
   }
 
   @AfterEach
@@ -115,6 +120,7 @@ class DependencyParserTest {
     moduleManagerStatic.close();
     libraryRegistrarStatic.close();
     externalSystemStatic.close();
+    externalProjectCacheStatic.close();
   }
 
   @Nested
@@ -483,25 +489,12 @@ class DependencyParserTest {
       return dependency;
     }
 
-    /** ExternalProject mock: new gradleSourceSetModel source or the deprecated source sets. */
+    /** ExternalProject mock carrying the source sets the parser walks. */
     private static ExternalProject externalProject(
-        @Nullable GradleSourceSetModel model,
-        Map<String, ? extends ExternalSourceSet> deprecatedSourceSets) {
-      ExternalProject project = mock(ExternalProject.class);
-      if (model != null) {
-        doReturn(model).when(project).getSourceSetModel();
-        doReturn(model.getSourceSets()).when(project).getSourceSets();
-      } else {
-        doReturn(deprecatedSourceSets).when(project).getSourceSets();
-      }
-      return project;
-    }
-
-    private static GradleSourceSetModel gradleSourceSetModel(
         Map<String, ? extends ExternalSourceSet> sourceSets) {
-      GradleSourceSetModel model = mock(GradleSourceSetModel.class);
-      doReturn(sourceSets).when(model).getSourceSets();
-      return model;
+      ExternalProject project = mock(ExternalProject.class);
+      doReturn(sourceSets).when(project).getSourceSets();
+      return project;
     }
 
     private static ExternalSourceSet externalSourceSet(
@@ -1012,33 +1005,25 @@ class DependencyParserTest {
     @DisplayName("should_build_chains_from_the_external_project_source_sets")
     void shouldBuildChainsFromTheExternalProjectSourceSets() {
       // Given: the resolver's ExternalProject with the resolved source-set graph (2026.3 syncs).
-      DataNode<ProjectData> projectNode =
-          setupGradleModuleWith(
-              List.of(
-                  libraryNode(libraryData("com.example", "root", "1.0.0")),
-                  libraryNode(libraryData("com.example", "transitive", "2.0.0"))),
-              List.of());
+      setupGradleModuleWith(
+          List.of(
+              libraryNode(libraryData("com.example", "root", "1.0.0")),
+              libraryNode(libraryData("com.example", "transitive", "2.0.0"))),
+          List.of());
       stubExternalProject(
-          projectNode,
           externalProject(
-              gradleSourceSetModel(
-                  Map.of(
+              Map.of(
+                  "main",
+                  externalSourceSet(
                       "main",
-                      externalSourceSet(
-                          "main",
-                          externalLibraryDependency(
-                              "com.example",
-                              "root",
-                              "1.0.0",
-                              "COMPILE",
-                              List.of(
-                                  externalLibraryDependency(
-                                      "com.example",
-                                      "transitive",
-                                      "2.0.0",
-                                      "COMPILE",
-                                      List.of())))))),
-              null));
+                      externalLibraryDependency(
+                          "com.example",
+                          "root",
+                          "1.0.0",
+                          "COMPILE",
+                          List.of(
+                              externalLibraryDependency(
+                                  "com.example", "transitive", "2.0.0", "COMPILE", List.of())))))));
 
       // When
       List<OsvPackage> results = DependencyParser.parseDependencies(project).packages();
@@ -1054,20 +1039,16 @@ class DependencyParserTest {
     @DisplayName("should_prepend_the_platform_pseudo_root_for_provided_source_set_dependencies")
     void shouldPrependThePlatformPseudoRootForProvidedSourceSetDependencies() {
       // Given: a source-set dependency the platform toolchain provides (PROVIDED scope).
-      DataNode<ProjectData> projectNode =
-          setupGradleModuleWith(
-              List.of(libraryNode(libraryData("at.yawk.lz4", "lz4-java", "1.11.3"))), List.of());
+      setupGradleModuleWith(
+          List.of(libraryNode(libraryData("at.yawk.lz4", "lz4-java", "1.11.3"))), List.of());
       stubExternalProject(
-          projectNode,
           externalProject(
-              gradleSourceSetModel(
-                  Map.of(
+              Map.of(
+                  "main",
+                  externalSourceSet(
                       "main",
-                      externalSourceSet(
-                          "main",
-                          externalLibraryDependency(
-                              "at.yawk.lz4", "lz4-java", "1.11.3", "PROVIDED", List.of())))),
-              null));
+                      externalLibraryDependency(
+                          "at.yawk.lz4", "lz4-java", "1.11.3", "PROVIDED", List.of())))));
 
       // When
       List<OsvPackage> results = DependencyParser.parseDependencies(project).packages();
@@ -1082,20 +1063,16 @@ class DependencyParserTest {
     @DisplayName("should_prepend_the_pseudo_root_for_dependencies_of_the_test_ui_source_set")
     void shouldPrependThePseudoRootForDependenciesOfTheTestUiSourceSet() {
       // Given: the whole testUi source set belongs to the IDE platform's classpath.
-      DataNode<ProjectData> projectNode =
-          setupGradleModuleWith(
-              List.of(libraryNode(libraryData("at.yawk.lz4", "lz4-java", "1.11.3"))), List.of());
+      setupGradleModuleWith(
+          List.of(libraryNode(libraryData("at.yawk.lz4", "lz4-java", "1.11.3"))), List.of());
       stubExternalProject(
-          projectNode,
           externalProject(
-              gradleSourceSetModel(
-                  Map.of(
+              Map.of(
+                  "testUi",
+                  externalSourceSet(
                       "testUi",
-                      externalSourceSet(
-                          "testUi",
-                          externalLibraryDependency(
-                              "at.yawk.lz4", "lz4-java", "1.11.3", "COMPILE", List.of())))),
-              null));
+                      externalLibraryDependency(
+                          "at.yawk.lz4", "lz4-java", "1.11.3", "COMPILE", List.of())))));
 
       // When
       List<OsvPackage> results = DependencyParser.parseDependencies(project).packages();
@@ -1110,29 +1087,25 @@ class DependencyParserTest {
     @DisplayName("should_ignore_file_collection_and_project_dependencies_without_failing")
     void shouldIgnoreFileCollectionAndProjectDependenciesWithoutFailing() {
       // Given: a file-collection root carrying a project dependency with a nested GAV library.
-      DataNode<ProjectData> projectNode =
-          setupGradleModuleWith(
-              List.of(libraryNode(libraryData("com.example", "nested", "1.0.0"))), List.of());
+      setupGradleModuleWith(
+          List.of(libraryNode(libraryData("com.example", "nested", "1.0.0"))), List.of());
       stubExternalProject(
-          projectNode,
           externalProject(
-              gradleSourceSetModel(
-                  Map.of(
+              Map.of(
+                  "main",
+                  externalSourceSet(
                       "main",
-                      externalSourceSet(
-                          "main",
-                          fileCollectionDependency(
-                              List.of(
-                                  projectDependency(
-                                      ":another",
-                                      List.of(
-                                          externalLibraryDependency(
-                                              "com.example",
-                                              "nested",
-                                              "1.0.0",
-                                              "COMPILE",
-                                              List.of())))))))),
-              null));
+                      fileCollectionDependency(
+                          List.of(
+                              projectDependency(
+                                  ":another",
+                                  List.of(
+                                      externalLibraryDependency(
+                                          "com.example",
+                                          "nested",
+                                          "1.0.0",
+                                          "COMPILE",
+                                          List.of())))))))));
 
       // When
       List<OsvPackage> results = DependencyParser.parseDependencies(project).packages();
@@ -1160,55 +1133,24 @@ class DependencyParserTest {
     }
 
     @Test
-    @DisplayName("should_fall_back_to_the_deprecated_source_sets_when_the_model_is_null")
-    void shouldFallBackToTheDeprecatedSourceSetsWhenTheModelIsNull() {
-      // Given: the source-set model absent and the deprecated getSourceSets() carrying the graph.
-      DataNode<ProjectData> projectNode =
-          setupGradleModuleWith(
-              List.of(libraryNode(libraryData("com.example", "root", "1.0.0"))), List.of());
+    @DisplayName("should_prefer_source_set_chains_over_the_single_node_fallback")
+    void shouldPreferSourceSetChainsOverTheSingleNodeFallback() {
+      // Given: a library with no module edge but a real chain inside the ExternalProject.
+      setupGradleModuleWith(List.of(libraryNode(libraryData("lost:a", "a", "3.0.0"))), List.of());
       stubExternalProject(
-          projectNode,
           externalProject(
-              null,
               Map.of(
                   "main",
                   externalSourceSet(
                       "main",
                       externalLibraryDependency(
-                          "com.example", "root", "1.0.0", "COMPILE", List.of())))));
-
-      // When
-      List<OsvPackage> results = DependencyParser.parseDependencies(project).packages();
-
-      // Then
-      assertThat(results).hasSize(1);
-      assertThat(results.get(0).dependencyChains()).containsExactly(List.of("com.example:root"));
-    }
-
-    @Test
-    @DisplayName("should_prefer_source_set_chains_over_the_single_node_fallback")
-    void shouldPreferSourceSetChainsOverTheSingleNodeFallback() {
-      // Given: a library with no module edge but a real chain inside the ExternalProject.
-      DataNode<ProjectData> projectNode =
-          setupGradleModuleWith(
-              List.of(libraryNode(libraryData("lost:a", "a", "3.0.0"))), List.of());
-      stubExternalProject(
-          projectNode,
-          externalProject(
-              gradleSourceSetModel(
-                  Map.of(
-                      "main",
-                      externalSourceSet(
-                          "main",
-                          externalLibraryDependency(
-                              "root:a",
-                              "a",
-                              "1.0.0",
-                              "COMPILE",
-                              List.of(
-                                  externalLibraryDependency(
-                                      "lost:a", "a", "3.0.0", "COMPILE", List.of())))))),
-              null));
+                          "root:a",
+                          "a",
+                          "1.0.0",
+                          "COMPILE",
+                          List.of(
+                              externalLibraryDependency(
+                                  "lost:a", "a", "3.0.0", "COMPILE", List.of())))))));
 
       // When
       List<OsvPackage> results = DependencyParser.parseDependencies(project).packages();
@@ -1226,6 +1168,7 @@ class DependencyParserTest {
       ExternalProjectInfo projectInfo = mock(ExternalProjectInfo.class);
       DataNode<ProjectData> projectNode = mock(DataNode.class);
       when(projectInfo.getExternalProjectStructure()).thenReturn(projectNode);
+      when(projectInfo.getExternalProjectPath()).thenReturn("root");
       when(projectDataManager.getExternalProjectsData(project, GradleConstants.SYSTEM_ID))
           .thenReturn(List.of(projectInfo));
 
@@ -1252,13 +1195,9 @@ class DependencyParserTest {
       return projectNode;
     }
 
-    /** Mocks the resolver's ExternalProject node under the given project data node. */
-    private void stubExternalProject(DataNode<ProjectData> projectNode, ExternalProject project) {
-      DataNode<ExternalProject> node = mock(DataNode.class);
-      when(node.getData()).thenReturn(project);
-      externalSystemStatic
-          .when(() -> ExternalSystemApiUtil.find(eq(projectNode), eq(ExternalProjectDataCache.KEY)))
-          .thenReturn(node);
+    /** Stubs the ExternalProject cache the parser goes through for the source-set chains. */
+    private void stubExternalProject(ExternalProject rootProject) {
+      when(externalProjectDataCache.getRootExternalProject(anyString())).thenReturn(rootProject);
     }
   }
 
