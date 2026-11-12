@@ -19,8 +19,8 @@ without leaving the IDE.
   to …*) upgrades the declaration — including Maven `${property}`-based versions — and refuses to downgrade.
 - **Dedicated tool window** — Review all scan results in the *VulnSpotter* tool window, with severity-sorted results,
   filters, search by package or CVE, a context menu (open in OSV.dev, copy coordinate, copy fix version, copy
-  upgrade snippet, ignore dependency), and a `mvn dependency:tree`-style path view in the details panel with the
-  scanned dependency highlighted.
+  upgrade snippet, ignore dependency), and a `mvn dependency:tree`-style path view in the details panel where the
+  scanned dependency is highlighted.
 - **Accurate severity** — CVSS v2/v3/v3.1/v4 vectors from OSV are actually parsed and scored (via
   `us.springett:cvss-calculator`); `database_specific` labels are only a fallback. Vulnerabilities without severity data
   are shown as **Unknown**, never hidden.
@@ -33,10 +33,10 @@ without leaving the IDE.
   never confused with what the manifest declares. Classpath entries the build never declares — what the
   `intellijPlatform` toolchain places there (provided scope, bundled libraries, its own testing source sets) — are
   reported as *Provided by the intellijPlatform toolchain*, with an `intellijPlatform (provided)` root in the path
-  views instead of a fake "declared" label.
+  views instead of a misleading "declared" label.
 - **Transitive remediation** — For transitive findings the tool window and every export state where the fix belongs: the
-  parent dependency's current version plus, deduced from Maven Central metadata (parent/BOM POMs, cached locally,
-  best effort), the first released parent version that already ships the vulnerable package at or above its fix
+  parent dependency's current version plus, deduced from Maven Central metadata (parent/BOM POMs cached locally,
+  best-effort), the first released parent version that already ships the vulnerable package at or above its fix
   (e.g. *upgrade spring-boot-starter-web to 4.1.0, which ships jackson-databind 2.17.1*). No network, chain data or
   deducible upgrade simply keeps the generic "upgrade the root" advice; exports expose the findings as
   `parentVersions` / `parentRemediations` (JSON, SARIF), a `Parent Fix` column (CSV) and `Transitive fix` lines (Markdown).
@@ -133,7 +133,7 @@ release workflow signs and publishes the plugin to the **JetBrains Marketplace**
   - `api.osv.dev` — `POST /v1/querybatch` to look up dependencies and `GET /v1/vulns/<id>` to fetch the details of the
     vulnerabilities found.
   - `repo1.maven.org` — `GET` of `maven-metadata.xml` and POM documents used to deduce the parent fix for transitive
-    findings (best effort; the answer degrades to "upgrade the root").
+    findings (best-effort; the answer degrades to "upgrade the root").
 - Data sent: dependency coordinates only (`name`, `ecosystem`, `version`). Project source code is **never** sent. No
   telemetry, no third-party endpoints beyond these two.
 - Local caches (IDE system directory): OSV answers live in memory only; Maven Central metadata/POMs under
@@ -149,7 +149,7 @@ release workflow signs and publishes the plugin to the **JetBrains Marketplace**
 - **Real Gradle dependency chains**: transitive findings read the resolved source-set model of the Gradle sync, so
   dependency trees match the build exactly. Classpath entries no build script declares (what the `intellijPlatform`
   toolchain places there) are labeled **Provided by the intellijPlatform toolchain** with an `intellijPlatform
-  (provided)` root in the path views instead of a fake "declared" label.
+  (provided)` root in the path views instead of a misleading "declared" label.
 - **Reports aligned with the tool window**: exports (HTML, PDF, CSV, JSON, SARIF, Markdown) now carry the same Remediation
   box (direct upgrade, per-root advice with generic fallback, platform note) and the `mvn dependency:tree`-style path per
   finding.
@@ -196,4 +196,4 @@ The intermediate releases (1.0.3–1.0.5) only carried build/packaging changes; 
 
 ## 📄 License
 
-Copyright (c) 2026 Luis Paolo Pepe Barra (@LuisPPB16). All rights reserved.
+Copyright © 2026 Luis Paolo Pepe Barra (@LuisPPB16). All rights reserved.

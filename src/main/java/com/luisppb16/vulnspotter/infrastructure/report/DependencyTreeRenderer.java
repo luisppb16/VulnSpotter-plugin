@@ -22,6 +22,9 @@ import java.util.Set;
  */
 public final class DependencyTreeRenderer {
 
+  /** Child indent under a terminal branch; identical for both glyph sets. */
+  private static final String CHILD_INDENT = "   ";
+
   private DependencyTreeRenderer() {
     throw new UnsupportedOperationException("Utility class");
   }
@@ -124,7 +127,7 @@ public final class DependencyTreeRenderer {
               node.target() ? targetVersion : versionIndex.get(node.name())));
       walkNodes(
           node,
-          parentPrefix + (last ? shape.child() : shape.mid()),
+          parentPrefix + (last ? CHILD_INDENT : shape.mid()),
           targetVersion,
           versionIndex,
           shape,
@@ -149,7 +152,6 @@ public final class DependencyTreeRenderer {
       String branch,
       String last,
       String mid,
-      String child,
       String htmlTargetMark,
       String htmlChildMark,
       String htmlRootMark,
@@ -160,12 +162,10 @@ public final class DependencyTreeRenderer {
             "├─ ",
             "└─ ",
             "│  ",
-            "   ",
             "<span class='icon'>⚠️</span> ",
             "<span class='icon'>📄</span> ",
             "<span class='icon'>📦</span> ",
             "⚠️ ");
-    private static final Shape ASCII =
-        new Shape("+- ", "\\- ", "|  ", "   ", "[!] ", "", "", "[!] ");
+    private static final Shape ASCII = new Shape("+- ", "\\- ", "|  ", "[!] ", "", "", "[!] ");
   }
 }

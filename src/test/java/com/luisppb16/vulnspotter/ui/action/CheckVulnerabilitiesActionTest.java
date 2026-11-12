@@ -7,9 +7,6 @@
 
 package com.luisppb16.vulnspotter.ui.action;
 
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
 import com.intellij.notification.Notification;

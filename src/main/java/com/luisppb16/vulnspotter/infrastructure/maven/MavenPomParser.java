@@ -14,6 +14,7 @@ import java.util.Map;
 import java.util.Optional;
 import javax.xml.XMLConstants;
 import javax.xml.parsers.DocumentBuilderFactory;
+import org.jetbrains.annotations.Nullable;
 import org.w3c.dom.Document;
 import org.w3c.dom.Element;
 import org.w3c.dom.Node;
@@ -73,21 +74,24 @@ public final class MavenPomParser {
       }
     }
 
-    Optional<Element> managedDependenciesElement =
-        firstElement(firstChild(project, "dependencyManagement"), "dependencies");
+    Element managedDependenciesElement =
+        firstChild(project, "dependencyManagement")
+            .flatMap(management -> firstChild(management, "dependencies"))
+            .orElse(null);
     List<MavenPom.Dependency> managedDependencies = parseDependencies(managedDependenciesElement);
-    List<MavenPom.Dependency> dependencies = parseDependencies(firstChild(project, "dependencies"));
+    List<MavenPom.Dependency> dependencies =
+        parseDependencies(firstChild(project, "dependencies").orElse(null));
 
     return Optional.of(new MavenPom(parent, properties, managedDependencies, dependencies));
   }
 
   private static List<MavenPom.Dependency> parseDependencies(
-      Optional<Element> dependenciesElement) {
-    if (dependenciesElement.isEmpty()) {
+      @Nullable Element dependenciesElement) {
+    if (dependenciesElement == null) {
       return List.of();
     }
     List<MavenPom.Dependency> dependencies = new ArrayList<>();
-    for (Element dependencyElement : children(dependenciesElement.get(), "dependency")) {
+    for (Element dependencyElement : children(dependenciesElement, "dependency")) {
       MavenPom.Dependency dependency = parseDependency(dependencyElement);
       if (dependency != null) {
         dependencies.add(dependency);
@@ -143,13 +147,6 @@ public final class MavenPomParser {
     }
     List<Element> candidates = children(parent, tagName);
     return candidates.isEmpty() ? Optional.empty() : Optional.of(candidates.getFirst());
-  }
-
-  private static Optional<Element> firstElement(Optional<Element> parent, String tagName) {
-    if (parent.isEmpty()) {
-      return Optional.empty();
-    }
-    return firstChild(parent.get(), tagName);
   }
 
   /** Direct child elements of {@code parent}; tag name {@code null} selects every child. */

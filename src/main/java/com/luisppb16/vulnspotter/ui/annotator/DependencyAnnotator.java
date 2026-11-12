@@ -15,6 +15,7 @@ import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiFile;
 import com.intellij.psi.xml.XmlTag;
 import com.luisppb16.vulnspotter.application.service.VulnerabilityScannerService;
+import com.luisppb16.vulnspotter.domain.model.Ecosystem;
 import com.luisppb16.vulnspotter.domain.model.PackageKey;
 import com.luisppb16.vulnspotter.domain.service.FixedVersionResolver;
 import com.luisppb16.vulnspotter.domain.service.SeverityAnalyzer;
@@ -35,10 +36,10 @@ import org.jetbrains.annotations.NotNull;
 public class DependencyAnnotator implements Annotator {
 
   private static String stripQuotes(String text) {
-    if (text.length() >= 6 && text.startsWith("'''") && text.endsWith("'''")) {
-      return text.substring(3, text.length() - 3);
-    }
-    if (text.length() >= 6 && text.startsWith("\"\"\"") && text.endsWith("\"\"\"")) {
+    boolean tripleSingle = text.length() >= 6 && text.startsWith("'''") && text.endsWith("'''");
+    boolean tripleDouble =
+        text.length() >= 6 && text.startsWith("\"\"\"") && text.endsWith("\"\"\"");
+    if (tripleSingle || tripleDouble) {
       return text.substring(3, text.length() - 3);
     }
     if (text.length() >= 2 && text.startsWith("'") && text.endsWith("'")) {
@@ -79,18 +80,15 @@ public class DependencyAnnotator implements Annotator {
 
     if (isPom) {
       if (element instanceof XmlTag tag && "dependency".equals(tag.getName())) {
-        annotatePomDependency(tag, fileName, scanner, holder);
+        annotatePomDependency(tag, scanner, holder);
       }
     } else {
-      annotateGradleLeaf(element, fileName, scanner, holder);
+      annotateGradleLeaf(element, scanner, holder);
     }
   }
 
   private void annotatePomDependency(
-      XmlTag dependencyTag,
-      String fileName,
-      VulnerabilityScannerService scanner,
-      AnnotationHolder holder) {
+      XmlTag dependencyTag, VulnerabilityScannerService scanner, AnnotationHolder holder) {
     XmlTag groupTag = dependencyTag.findFirstSubTag("groupId");
     XmlTag artifactTag = dependencyTag.findFirstSubTag("artifactId");
     if (groupTag == null || artifactTag == null) {
@@ -113,8 +111,8 @@ public class DependencyAnnotator implements Annotator {
       // authoritative for poms the last parse covered (a coordinate it does not answer was pruned
       // away there, so walking again could not help); poms never scanned are walked by the
       // service. Without a resolved version no scan row can be ruled in or out — staying silent
-      // is the only choice that cannot produce false positives (a name-only fallback highlighted
-      // any vulnerable entry whose group:artifact matched, even at an unrelated old version).
+      // is the only choice that cannot produce false positives: a name-only fallback highlighted
+      // any vulnerable entry whose group:artifact matched, even at an unrelated old version.
       resolvedVersion =
           scanner.resolvedVersion(
               dependencyTag.getContainingFile().getVirtualFile(), groupId, artifactId);
@@ -124,8 +122,7 @@ public class DependencyAnnotator implements Annotator {
     }
 
     VulnerabilityScannerService.ScanResult result =
-        scanner.findVulnerableResult(
-            new PackageKey(name, resolvedVersion, Manifests.ecosystemOf(fileName)));
+        scanner.findVulnerableResult(new PackageKey(name, resolvedVersion, Ecosystem.MAVEN));
     if (result == null) {
       return;
     }
@@ -135,8 +132,7 @@ public class DependencyAnnotator implements Annotator {
     TextRange anchor;
     if (versionTag != null) {
       TextRange valueRange = versionTag.getValue().getTextRange();
-      anchor =
-          (valueRange != null && !valueRange.isEmpty()) ? valueRange : versionTag.getTextRange();
+      anchor = !valueRange.isEmpty() ? valueRange : versionTag.getTextRange();
     } else {
       anchor = artifactTag.getTextRange();
     }
@@ -150,10 +146,7 @@ public class DependencyAnnotator implements Annotator {
    * leaf tokens include them.
    */
   private void annotateGradleLeaf(
-      PsiElement element,
-      String fileName,
-      VulnerabilityScannerService scanner,
-      AnnotationHolder holder) {
+      PsiElement element, VulnerabilityScannerService scanner, AnnotationHolder holder) {
     if (element.getFirstChild() != null) {
       return; // only leaf tokens
     }
@@ -173,8 +166,7 @@ public class DependencyAnnotator implements Annotator {
     String version = text.substring(lastColon + 1);
 
     VulnerabilityScannerService.ScanResult result =
-        scanner.findVulnerableResult(
-            new PackageKey(name, version, Manifests.ecosystemOf(fileName)));
+        scanner.findVulnerableResult(new PackageKey(name, version, Ecosystem.MAVEN));
     if (result == null) {
       return;
     }

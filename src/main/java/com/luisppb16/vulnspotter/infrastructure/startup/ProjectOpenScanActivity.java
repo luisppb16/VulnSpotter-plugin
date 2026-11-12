@@ -18,7 +18,6 @@ import java.util.List;
 import kotlin.Unit;
 import kotlin.coroutines.Continuation;
 import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
 
 /**
  * Runs a vulnerability scan when a project is opened, if the {@code analyzeOnProjectOpen} setting
@@ -48,7 +47,6 @@ public final class ProjectOpenScanActivity implements ProjectActivity {
   }
 
   @Override
-  @Nullable
   public Object execute(
       @NotNull Project project, @NotNull Continuation<? super Unit> continuation) {
     VulnSpotterSettings settings = VulnSpotterSettings.getInstance();

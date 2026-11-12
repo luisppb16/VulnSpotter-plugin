@@ -152,9 +152,9 @@ class DependencyParserTest {
 
       // Then
       assertThat(results).hasSize(1);
-      assertThat(results.get(0).name()).isEqualTo("com.example:lib");
-      assertThat(results.get(0).version()).isEqualTo("1.0.0");
-      assertThat(results.get(0).ecosystem()).isEqualTo("Maven");
+      assertThat(results.getFirst().name()).isEqualTo("com.example:lib");
+      assertThat(results.getFirst().version()).isEqualTo("1.0.0");
+      assertThat(results.getFirst().ecosystem()).isEqualTo("Maven");
     }
 
     @Test
@@ -162,7 +162,7 @@ class DependencyParserTest {
     void shouldSkipAnAddedNodeWithANullArtifactInsteadOfFailing() {
       // Given: a stale or partially resolved model can present an ADDED node without its
       // artifact — the walks must skip it instead of an NPE losing the whole pass.
-      MavenArtifactNode fineNode = addedNode("com.example", "fine", "3.0.0", List.of());
+      MavenArtifactNode fineNode = addedNode("fine", "3.0.0", List.of());
       MavenArtifactNode brokenNode = mock(MavenArtifactNode.class);
       when(brokenNode.getState()).thenReturn(MavenArtifactState.ADDED);
       // brokenNode.getArtifact() stays the mock default: null.
@@ -178,7 +178,7 @@ class DependencyParserTest {
 
       // Then: the malformed node is skipped; its reachable children still make it into the scan.
       assertThat(results).hasSize(1);
-      assertThat(results.get(0).name()).isEqualTo("com.example:fine");
+      assertThat(results.getFirst().name()).isEqualTo("com.example:fine");
     }
 
     @ParameterizedTest
@@ -197,12 +197,11 @@ class DependencyParserTest {
       MavenArtifactNode loserNode = mock(MavenArtifactNode.class);
       when(loserNode.getState()).thenReturn(lostState);
       when(loserNode.getArtifact()).thenReturn(lostArtifact);
-      MavenArtifactNode ghostNode = addedNode("com.example", "ghost", "9.9.9", List.of());
+      MavenArtifactNode ghostNode = addedNode("ghost", "9.9.9", List.of());
       when(loserNode.getDependencies()).thenReturn(List.of(ghostNode)); // must never be traversed
 
-      MavenArtifactNode siblingNode = addedNode("com.example", "real", "2.0.0", List.of());
-      MavenArtifactNode rootNode =
-          addedNode("com.example", "root", "1.0.0", List.of(loserNode, siblingNode));
+      MavenArtifactNode siblingNode = addedNode("real", "2.0.0", List.of());
+      MavenArtifactNode rootNode = addedNode("root", "1.0.0", List.of(loserNode, siblingNode));
 
       when(mavenProjectsManager.hasProjects()).thenReturn(true);
       MavenProject mavenProject = mock(MavenProject.class);
@@ -223,10 +222,9 @@ class DependencyParserTest {
     @DisplayName("should_collect_all_dependencies_in_a_fully_added_tree")
     void shouldCollectAllDependenciesInFullyAddedTree() {
       // Given
-      MavenArtifactNode grandchildNode = addedNode("com.example", "grandchild", "3.0.0", List.of());
-      MavenArtifactNode childNode =
-          addedNode("com.example", "child", "2.0.0", List.of(grandchildNode));
-      MavenArtifactNode rootNode = addedNode("com.example", "root", "1.0.0", List.of(childNode));
+      MavenArtifactNode grandchildNode = addedNode("grandchild", "3.0.0", List.of());
+      MavenArtifactNode childNode = addedNode("child", "2.0.0", List.of(grandchildNode));
+      MavenArtifactNode rootNode = addedNode("root", "1.0.0", List.of(childNode));
 
       when(mavenProjectsManager.hasProjects()).thenReturn(true);
       MavenProject mavenProject = mock(MavenProject.class);
@@ -254,10 +252,10 @@ class DependencyParserTest {
       MavenProject mavenProject = mock(MavenProject.class);
       VirtualFile pom = mock(VirtualFile.class);
       when(mavenProject.getFile()).thenReturn(pom);
-      MavenArtifactNode firstPathNode = addedNode("com.example", "lib", "1.2.3", List.of());
-      MavenArtifactNode secondPathNode = addedNode("com.example", "lib", "4.5.6", List.of());
+      MavenArtifactNode firstPathNode = addedNode("lib", "1.2.3", List.of());
+      MavenArtifactNode secondPathNode = addedNode("lib", "4.5.6", List.of());
       MavenArtifactNode rootNode =
-          addedNode("com.example", "root", "1.0.0", List.of(firstPathNode, secondPathNode));
+          addedNode("root", "1.0.0", List.of(firstPathNode, secondPathNode));
 
       when(mavenProjectsManager.hasProjects()).thenReturn(true);
       when(mavenProjectsManager.getProjects()).thenReturn(List.of(mavenProject));
@@ -283,13 +281,13 @@ class DependencyParserTest {
       MavenArtifactNode brokenNode = mock(MavenArtifactNode.class);
       when(brokenNode.getState()).thenReturn(MavenArtifactState.ADDED);
       when(brokenNode.getArtifact()).thenReturn(brokenArtifact);
-      MavenArtifactNode childNode = addedNode("com.example", "child", "2.0.0", List.of());
+      MavenArtifactNode childNode = addedNode("child", "2.0.0", List.of());
       when(brokenNode.getDependencies()).thenReturn(List.of(childNode));
 
       when(mavenProjectsManager.hasProjects()).thenReturn(true);
       MavenProject mavenProject = mock(MavenProject.class);
       when(mavenProjectsManager.getProjects()).thenReturn(List.of(mavenProject));
-      MavenArtifactNode healthyNode = addedNode("com.example", "healthy", "3.0.0", List.of());
+      MavenArtifactNode healthyNode = addedNode("healthy", "3.0.0", List.of());
       when(mavenProject.getDependencyTree()).thenReturn(List.of(brokenNode, healthyNode));
 
       // When
@@ -302,9 +300,9 @@ class DependencyParserTest {
     }
 
     private MavenArtifactNode addedNode(
-        String groupId, String artifactId, String version, List<MavenArtifactNode> children) {
+        String artifactId, String version, List<MavenArtifactNode> children) {
       MavenArtifact artifact = mock(MavenArtifact.class);
-      when(artifact.getGroupId()).thenReturn(groupId);
+      when(artifact.getGroupId()).thenReturn("com.example");
       when(artifact.getArtifactId()).thenReturn(artifactId);
       when(artifact.getVersion()).thenReturn(version);
 
@@ -328,8 +326,8 @@ class DependencyParserTest {
       VirtualFile pomFile = mock(VirtualFile.class);
       MavenProject mavenProject = mock(MavenProject.class);
       when(mavenProjectsManager.findProject(pomFile)).thenReturn(mavenProject);
-      MavenArtifactNode childNode = addedNode("com.example", "lib", "1.2.3", List.of());
-      MavenArtifactNode rootNode = addedNode("com.example", "root", "1.0.0", List.of(childNode));
+      MavenArtifactNode childNode = addedNode("lib", "1.2.3", List.of());
+      MavenArtifactNode rootNode = addedNode("root", "1.0.0", List.of(childNode));
       when(mavenProject.getDependencyTree()).thenReturn(List.of(rootNode));
 
       // When
@@ -353,7 +351,7 @@ class DependencyParserTest {
       MavenArtifactNode lostNode = mock(MavenArtifactNode.class);
       when(lostNode.getState()).thenReturn(lostState);
       when(lostNode.getArtifact()).thenReturn(lostArtifact);
-      MavenArtifactNode ghostNode = addedNode("com.example", "ghost", "9.9.9", List.of());
+      MavenArtifactNode ghostNode = addedNode("ghost", "9.9.9", List.of());
       when(lostNode.getDependencies()).thenReturn(List.of(ghostNode)); // must never be traversed
 
       VirtualFile pomFile = mock(VirtualFile.class);
@@ -390,7 +388,7 @@ class DependencyParserTest {
       VirtualFile pomFile = mock(VirtualFile.class);
       MavenProject mavenProject = mock(MavenProject.class);
       when(mavenProjectsManager.findProject(pomFile)).thenReturn(mavenProject);
-      MavenArtifactNode rootNode = addedNode("com.example", "other", "1.0.0", List.of());
+      MavenArtifactNode rootNode = addedNode("other", "1.0.0", List.of());
       when(mavenProject.getDependencyTree()).thenReturn(List.of(rootNode));
 
       // When
@@ -426,9 +424,9 @@ class DependencyParserTest {
     }
 
     private MavenArtifactNode addedNode(
-        String groupId, String artifactId, String version, List<MavenArtifactNode> children) {
+        String artifactId, String version, List<MavenArtifactNode> children) {
       MavenArtifact artifact = mock(MavenArtifact.class);
-      when(artifact.getGroupId()).thenReturn(groupId);
+      when(artifact.getGroupId()).thenReturn("com.example");
       when(artifact.getArtifactId()).thenReturn(artifactId);
       when(artifact.getVersion()).thenReturn(version);
 
@@ -455,9 +453,7 @@ class DependencyParserTest {
 
     /** Library node mock carrying the given library data. */
     private static DataNode<LibraryData> libraryNode(LibraryData data) {
-      DataNode<LibraryData> libNode = mock(DataNode.class);
-      when(libNode.getData()).thenReturn(data);
-      return libNode;
+      return new DataNode<>(ProjectKeys.LIBRARY, data, null);
     }
 
     /** Edge node mock whose target library carries the given coordinates. */
@@ -475,18 +471,36 @@ class DependencyParserTest {
       if (scope != null) {
         when(data.getScope()).thenReturn(scope);
       }
-      DataNode<LibraryDependencyData> dependency = mock(DataNode.class);
-      when(dependency.getData()).thenReturn(data);
-      return dependency;
+      return new DataNode<>(ProjectKeys.LIBRARY_DEPENDENCY, data, null);
     }
 
     /** Edge node mock targeting the given library data directly (no coordinate stubs needed). */
     private static DataNode<LibraryDependencyData> stubEdgeNode(LibraryData target) {
       LibraryDependencyData data = mock(LibraryDependencyData.class);
       when(data.getTarget()).thenReturn(target);
-      DataNode<LibraryDependencyData> dependency = mock(DataNode.class);
-      when(dependency.getData()).thenReturn(data);
-      return dependency;
+      return new DataNode<>(ProjectKeys.LIBRARY_DEPENDENCY, data, null);
+    }
+
+    /** Module data honoring the platform's {@code @NotNull getModuleName()} contract. */
+    private static ModuleData stubModuleData() {
+      ModuleData data = mock(ModuleData.class);
+      when(data.getModuleName()).thenReturn("stub-module");
+      return data;
+    }
+
+    /** Module node mock carrying the given module data. */
+    private static DataNode<ModuleData> moduleNode(ModuleData data) {
+      return new DataNode<>(ProjectKeys.MODULE, data, null);
+    }
+
+    /** Module node mock with default stub module data. */
+    private static DataNode<ModuleData> moduleNode() {
+      return moduleNode(stubModuleData());
+    }
+
+    /** Project root node mock; the parser only walks its children. */
+    private static DataNode<ProjectData> projectNode() {
+      return new DataNode<>(ProjectKeys.PROJECT, mock(ProjectData.class), null);
     }
 
     /** ExternalProject mock carrying the source sets the parser walks. */
@@ -530,8 +544,7 @@ class DependencyParserTest {
       return dependency;
     }
 
-    private static ExternalDependency projectDependency(
-        String projectPath, List<ExternalDependency> children) {
+    private static ExternalDependency projectDependency(List<ExternalDependency> children) {
       ExternalDependency dependency = mock(ExternalProjectDependency.class);
       when(dependency.getGroup()).thenReturn(null);
       when(dependency.getName()).thenReturn(null);
@@ -557,17 +570,16 @@ class DependencyParserTest {
       when(mavenProjectsManager.hasProjects()).thenReturn(false); // Skip Maven
 
       ExternalProjectInfo projectInfo = mock(ExternalProjectInfo.class);
-      DataNode<ProjectData> projectNode = mock(DataNode.class);
+      DataNode<ProjectData> projectNode = projectNode();
       when(projectInfo.getExternalProjectStructure()).thenReturn(projectNode);
       when(projectDataManager.getExternalProjectsData(project, GradleConstants.SYSTEM_ID))
           .thenReturn(List.of(projectInfo));
 
-      DataNode<LibraryData> libNode = mock(DataNode.class);
       LibraryData libData = mock(LibraryData.class);
       when(libData.getGroupId()).thenReturn("com.example");
       when(libData.getArtifactId()).thenReturn("gradle-lib");
       when(libData.getVersion()).thenReturn("2.0.0");
-      when(libNode.getData()).thenReturn(libData);
+      DataNode<LibraryData> libNode = libraryNode(libData);
 
       externalSystemStatic
           .when(() -> ExternalSystemApiUtil.findAll(eq(projectNode), eq(ProjectKeys.LIBRARY)))
@@ -581,8 +593,8 @@ class DependencyParserTest {
 
       // Then
       assertThat(results).hasSize(1);
-      assertThat(results.get(0).name()).isEqualTo("com.example:gradle-lib");
-      assertThat(results.get(0).version()).isEqualTo("2.0.0");
+      assertThat(results.getFirst().name()).isEqualTo("com.example:gradle-lib");
+      assertThat(results.getFirst().version()).isEqualTo("2.0.0");
     }
 
     @Test
@@ -593,22 +605,21 @@ class DependencyParserTest {
       when(mavenProjectsManager.hasProjects()).thenReturn(false); // Skip Maven
 
       ExternalProjectInfo projectInfo = mock(ExternalProjectInfo.class);
-      DataNode<ProjectData> projectNode = mock(DataNode.class);
+      DataNode<ProjectData> projectNode = projectNode();
       when(projectInfo.getExternalProjectStructure()).thenReturn(projectNode);
       when(projectDataManager.getExternalProjectsData(project, GradleConstants.SYSTEM_ID))
           .thenReturn(List.of(projectInfo));
 
-      DataNode<ModuleData> moduleNode = mock(DataNode.class);
+      DataNode<ModuleData> moduleNode = moduleNode();
       externalSystemStatic
           .when(() -> ExternalSystemApiUtil.findAll(eq(projectNode), eq(ProjectKeys.MODULE)))
           .thenReturn(List.of(moduleNode));
 
-      DataNode<LibraryData> jacksonLibNode = mock(DataNode.class);
       LibraryData jacksonLibRoot = mock(LibraryData.class);
       when(jacksonLibRoot.getGroupId()).thenReturn("tools.jackson.core");
       when(jacksonLibRoot.getArtifactId()).thenReturn("jackson-core");
       when(jacksonLibRoot.getVersion()).thenReturn("3.1.4");
-      when(jacksonLibNode.getData()).thenReturn(jacksonLibRoot);
+      DataNode<LibraryData> jacksonLibNode = libraryNode(jacksonLibRoot);
       externalSystemStatic
           .when(() -> ExternalSystemApiUtil.findAll(eq(projectNode), eq(ProjectKeys.LIBRARY)))
           .thenReturn(List.of());
@@ -616,21 +627,15 @@ class DependencyParserTest {
           .when(() -> ExternalSystemApiUtil.findAll(eq(moduleNode), eq(ProjectKeys.LIBRARY)))
           .thenReturn(List.of(jacksonLibNode));
 
-      DataNode<LibraryDependencyData> frameworkDep = mock(DataNode.class);
-      LibraryDependencyData frameworkDepData = mock(LibraryDependencyData.class);
       LibraryData frameworkLib = mock(LibraryData.class);
-      when(frameworkDep.getData()).thenReturn(frameworkDepData);
-      when(frameworkDepData.getTarget()).thenReturn(frameworkLib);
       when(frameworkLib.getGroupId()).thenReturn("com.jetbrains.intellij.platform");
       when(frameworkLib.getArtifactId()).thenReturn("test-framework-core");
+      DataNode<LibraryDependencyData> frameworkDep = stubEdgeNode(frameworkLib);
 
-      DataNode<LibraryDependencyData> jacksonDep = mock(DataNode.class);
-      LibraryDependencyData jacksonDepData = mock(LibraryDependencyData.class);
       LibraryData jacksonLib = mock(LibraryData.class);
-      when(jacksonDep.getData()).thenReturn(jacksonDepData);
-      when(jacksonDepData.getTarget()).thenReturn(jacksonLib);
       when(jacksonLib.getGroupId()).thenReturn("tools.jackson.core");
       when(jacksonLib.getArtifactId()).thenReturn("jackson-core");
+      DataNode<LibraryDependencyData> jacksonDep = stubEdgeNode(jacksonLib);
 
       externalSystemStatic
           .when(() ->
@@ -651,9 +656,9 @@ class DependencyParserTest {
 
       // Then: the nested coordinate carries the chain that pulls it in.
       assertThat(results).hasSize(1);
-      assertThat(results.get(0).name()).isEqualTo("tools.jackson.core:jackson-core");
-      assertThat(results.get(0).version()).isEqualTo("3.1.4");
-      assertThat(results.get(0).dependencyChains())
+      assertThat(results.getFirst().name()).isEqualTo("tools.jackson.core:jackson-core");
+      assertThat(results.getFirst().version()).isEqualTo("3.1.4");
+      assertThat(results.getFirst().dependencyChains())
           .containsExactly(
               List.of(
                   "com.jetbrains.intellij.platform:test-framework-core",
@@ -668,13 +673,13 @@ class DependencyParserTest {
       when(mavenProjectsManager.hasProjects()).thenReturn(false);
 
       ExternalProjectInfo projectInfo = mock(ExternalProjectInfo.class);
-      DataNode<ProjectData> projectNode = mock(DataNode.class);
+      DataNode<ProjectData> projectNode = projectNode();
       when(projectInfo.getExternalProjectStructure()).thenReturn(projectNode);
       when(projectDataManager.getExternalProjectsData(project, GradleConstants.SYSTEM_ID))
           .thenReturn(List.of(projectInfo));
 
-      DataNode<ModuleData> firstModule = mock(DataNode.class);
-      DataNode<ModuleData> secondModule = mock(DataNode.class);
+      DataNode<ModuleData> firstModule = moduleNode();
+      DataNode<ModuleData> secondModule = moduleNode();
       DataNode<LibraryData> firstSharedLib = libraryNode(libraryData("g", "a", "1.0.0"));
       DataNode<LibraryData> secondSharedLib = libraryNode(libraryData("g", "a", "2.0.0"));
       DataNode<LibraryDependencyData> firstDirect = stubEdgeNode("d", "direct", "0.5.0");
@@ -742,26 +747,23 @@ class DependencyParserTest {
       when(mavenProjectsManager.hasProjects()).thenReturn(false);
 
       ExternalProjectInfo projectInfo = mock(ExternalProjectInfo.class);
-      DataNode<ProjectData> projectNode = mock(DataNode.class);
+      DataNode<ProjectData> projectNode = projectNode();
       when(projectInfo.getExternalProjectStructure()).thenReturn(projectNode);
       when(projectDataManager.getExternalProjectsData(project, GradleConstants.SYSTEM_ID))
           .thenReturn(List.of(projectInfo));
 
       DataNode<LibraryDependencyData> parentDep = stubEdgeNode("p", "parent", "1.0.0");
-      DataNode<LibraryDependencyData> mergedDep = mock(DataNode.class);
-      LibraryDependencyData mergedData = mock(LibraryDependencyData.class);
       LibraryData mergedTarget = mock(LibraryData.class);
-      when(mergedDep.getData()).thenReturn(mergedData);
-      when(mergedData.getTarget()).thenReturn(mergedTarget);
       when(mergedTarget.getGroupId()).thenReturn(null);
       when(mergedTarget.getArtifactId()).thenReturn(null);
       when(mergedTarget.getVersion()).thenReturn("1.0.0");
+      DataNode<LibraryDependencyData> mergedDep = stubEdgeNode(mergedTarget);
       when(mergedTarget.getPaths(LibraryPathType.BINARY))
           .thenReturn(
               Set.of(
                   "C:\\Users\\dev\\.gradle\\caches\\modules-2\\files-2.1\\g\\a\\1.0\\a-1.0.jar"));
 
-      DataNode<ModuleData> moduleNode = mock(DataNode.class);
+      DataNode<ModuleData> moduleNode = moduleNode();
       DataNode<LibraryData> recoveredLib = libraryNode(libraryData("g", "a", "1.0.0"));
       externalSystemStatic
           .when(() -> ExternalSystemApiUtil.findAll(eq(projectNode), eq(ProjectKeys.MODULE)))
@@ -790,7 +792,7 @@ class DependencyParserTest {
 
       // Then: the recovered chain is the real parent path, not the synthetic single-node one.
       assertThat(results).hasSize(1);
-      assertThat(results.get(0).dependencyChains()).containsExactly(List.of("p:parent", "g:a"));
+      assertThat(results.getFirst().dependencyChains()).containsExactly(List.of("p:parent", "g:a"));
     }
 
     @Test
@@ -800,7 +802,7 @@ class DependencyParserTest {
       when(mavenProjectsManager.hasProjects()).thenReturn(false);
 
       ExternalProjectInfo projectInfo = mock(ExternalProjectInfo.class);
-      DataNode<ProjectData> projectNode = mock(DataNode.class);
+      DataNode<ProjectData> projectNode = projectNode();
       when(projectInfo.getExternalProjectStructure()).thenReturn(projectNode);
       when(projectDataManager.getExternalProjectsData(project, GradleConstants.SYSTEM_ID))
           .thenReturn(List.of(projectInfo));
@@ -809,7 +811,7 @@ class DependencyParserTest {
       when(lostData.getPaths(LibraryPathType.BINARY)).thenReturn(Set.of());
       DataNode<LibraryData> lostLib = libraryNode(lostData);
 
-      DataNode<ModuleData> moduleNode = mock(DataNode.class);
+      DataNode<ModuleData> moduleNode = moduleNode();
       externalSystemStatic
           .when(() -> ExternalSystemApiUtil.findAll(eq(projectNode), eq(ProjectKeys.MODULE)))
           .thenReturn(List.of(moduleNode));
@@ -829,7 +831,7 @@ class DependencyParserTest {
 
       // Then: the finding stays visible with the legacy single-node chain (announced by a WARN).
       assertThat(results).hasSize(1);
-      assertThat(results.get(0).dependencyChains()).containsExactly(List.of("lost:a"));
+      assertThat(results.getFirst().dependencyChains()).containsExactly(List.of("lost:a"));
     }
 
     @Test
@@ -845,7 +847,7 @@ class DependencyParserTest {
 
       // Then: the chain names the platform toolchain, not the build script.
       assertThat(results).hasSize(1);
-      assertThat(results.get(0).dependencyChains())
+      assertThat(results.getFirst().dependencyChains())
           .containsExactly(List.of(DependencyProvenance.PLATFORM_ROOT, "at.yawk.lz4:lz4-java"));
     }
 
@@ -863,7 +865,7 @@ class DependencyParserTest {
 
       // Then
       assertThat(results).hasSize(1);
-      assertThat(results.get(0).dependencyChains())
+      assertThat(results.getFirst().dependencyChains())
           .containsExactly(
               List.of(DependencyProvenance.PLATFORM_ROOT, "bundledModule:intellij.java.core"));
     }
@@ -887,7 +889,7 @@ class DependencyParserTest {
 
       // Then
       assertThat(results).hasSize(1);
-      assertThat(results.get(0).dependencyChains())
+      assertThat(results.getFirst().dependencyChains())
           .containsExactly(
               List.of(DependencyProvenance.PLATFORM_ROOT, "com.intellij.xml:intellij.xml.core"));
     }
@@ -905,7 +907,7 @@ class DependencyParserTest {
 
       // Then
       assertThat(results).hasSize(1);
-      assertThat(results.get(0).dependencyChains())
+      assertThat(results.getFirst().dependencyChains())
           .containsExactly(List.of("com.example:plain-lib"));
     }
 
@@ -960,15 +962,14 @@ class DependencyParserTest {
       when(mavenProjectsManager.hasProjects()).thenReturn(false);
 
       ExternalProjectInfo projectInfo = mock(ExternalProjectInfo.class);
-      DataNode<ProjectData> projectNode = mock(DataNode.class);
+      DataNode<ProjectData> projectNode = projectNode();
       when(projectInfo.getExternalProjectStructure()).thenReturn(projectNode);
       when(projectDataManager.getExternalProjectsData(project, GradleConstants.SYSTEM_ID))
           .thenReturn(List.of(projectInfo));
 
       ModuleData testUiData = mock(ModuleData.class);
       when(testUiData.getModuleName()).thenReturn("vulnspotter-plugin.testUi");
-      DataNode<ModuleData> testUiModule = mock(DataNode.class);
-      when(testUiModule.getData()).thenReturn(testUiData);
+      DataNode<ModuleData> testUiModule = moduleNode(testUiData);
       DataNode<LibraryDependencyData> lz4Edge =
           stubEdgeNode("at.yawk.lz4", "lz4-java", "1.11.3", DependencyScope.RUNTIME);
 
@@ -997,7 +998,7 @@ class DependencyParserTest {
 
       // Then: the toolchain module marks the whole classpath as platform-provided.
       assertThat(results).hasSize(1);
-      assertThat(results.get(0).dependencyChains())
+      assertThat(results.getFirst().dependencyChains())
           .containsExactly(List.of(DependencyProvenance.PLATFORM_ROOT, "at.yawk.lz4:lz4-java"));
     }
 
@@ -1055,7 +1056,7 @@ class DependencyParserTest {
 
       // Then
       assertThat(results).hasSize(1);
-      assertThat(results.get(0).dependencyChains())
+      assertThat(results.getFirst().dependencyChains())
           .containsExactly(List.of(DependencyProvenance.PLATFORM_ROOT, "at.yawk.lz4:lz4-java"));
     }
 
@@ -1079,7 +1080,7 @@ class DependencyParserTest {
 
       // Then
       assertThat(results).hasSize(1);
-      assertThat(results.get(0).dependencyChains())
+      assertThat(results.getFirst().dependencyChains())
           .containsExactly(List.of(DependencyProvenance.PLATFORM_ROOT, "at.yawk.lz4:lz4-java"));
     }
 
@@ -1098,7 +1099,6 @@ class DependencyParserTest {
                       fileCollectionDependency(
                           List.of(
                               projectDependency(
-                                  ":another",
                                   List.of(
                                       externalLibraryDependency(
                                           "com.example",
@@ -1112,7 +1112,8 @@ class DependencyParserTest {
 
       // Then: only the nested GAV coordinate enters, with its real path.
       assertThat(results).hasSize(1);
-      assertThat(results.get(0).dependencyChains()).containsExactly(List.of("com.example:nested"));
+      assertThat(results.getFirst().dependencyChains())
+          .containsExactly(List.of("com.example:nested"));
     }
 
     @Test
@@ -1129,7 +1130,7 @@ class DependencyParserTest {
 
       // Then
       assertThat(results).hasSize(1);
-      assertThat(results.get(0).dependencyChains()).containsExactly(List.of("g:a:a"));
+      assertThat(results.getFirst().dependencyChains()).containsExactly(List.of("g:a:a"));
     }
 
     @Test
@@ -1161,18 +1162,18 @@ class DependencyParserTest {
     }
 
     /** Standard Gradle sync fixtures: one module holding the given libraries and root edges. */
-    private DataNode<ProjectData> setupGradleModuleWith(
+    private void setupGradleModuleWith(
         List<DataNode<LibraryData>> libraries, List<DataNode<LibraryDependencyData>> edges) {
       when(mavenProjectsManager.hasProjects()).thenReturn(false);
 
       ExternalProjectInfo projectInfo = mock(ExternalProjectInfo.class);
-      DataNode<ProjectData> projectNode = mock(DataNode.class);
+      DataNode<ProjectData> projectNode = projectNode();
       when(projectInfo.getExternalProjectStructure()).thenReturn(projectNode);
       when(projectInfo.getExternalProjectPath()).thenReturn("root");
       when(projectDataManager.getExternalProjectsData(project, GradleConstants.SYSTEM_ID))
           .thenReturn(List.of(projectInfo));
 
-      DataNode<ModuleData> moduleNode = mock(DataNode.class);
+      DataNode<ModuleData> moduleNode = moduleNode();
       externalSystemStatic
           .when(() -> ExternalSystemApiUtil.findAll(eq(projectNode), eq(ProjectKeys.MODULE)))
           .thenReturn(List.of(moduleNode));
@@ -1192,7 +1193,6 @@ class DependencyParserTest {
                 ExternalSystemApiUtil.getChildren(eq(edge), eq(ProjectKeys.LIBRARY_DEPENDENCY)))
             .thenReturn(List.of());
       }
-      return projectNode;
     }
 
     /** Stubs the ExternalProject cache the parser goes through for the source-set chains. */
@@ -1226,8 +1226,8 @@ class DependencyParserTest {
 
       // Then
       assertThat(results).hasSize(1);
-      assertThat(results.get(0).name()).isEqualTo("com.fallback:lib");
-      assertThat(results.get(0).version()).isEqualTo("3.0.0");
+      assertThat(results.getFirst().name()).isEqualTo("com.fallback:lib");
+      assertThat(results.getFirst().version()).isEqualTo("3.0.0");
     }
 
     @Test
@@ -1286,8 +1286,8 @@ class DependencyParserTest {
 
       // Then
       assertThat(results).hasSize(1);
-      assertThat(results.get(0).name()).isEqualTo("com.google.guava:guava");
-      assertThat(results.get(0).version()).isEqualTo("30.1-jre");
+      assertThat(results.getFirst().name()).isEqualTo("com.google.guava:guava");
+      assertThat(results.getFirst().version()).isEqualTo("30.1-jre");
     }
   }
 }

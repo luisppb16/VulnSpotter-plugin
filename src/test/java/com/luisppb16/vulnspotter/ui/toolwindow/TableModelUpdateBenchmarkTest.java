@@ -44,7 +44,7 @@ public class TableModelUpdateBenchmarkTest {
   @SuppressWarnings("unchecked")
   private void runBulkUpdates() {
     DefaultTableModel model = new DefaultTableModel(COLUMN_NAMES, 0);
-    Vector<Vector<Object>> dataVector = (Vector) model.getDataVector();
+    Vector<Vector<Object>> dataVector = (Vector<Vector<Object>>) (Vector<?>) model.getDataVector();
     int firstRow = dataVector.size();
     for (int i = 0; i < ROW_COUNT; i++) {
       Vector<Object> row = new Vector<>(4);

@@ -235,7 +235,6 @@ public final class DependencyParser {
           .forEachRemaining(key -> {
             // The root project itself is keyed as "" ; nested node_modules entries carry the
             // resolved version. Take the package name after the last "node_modules/" segment.
-            if (key.isEmpty() || !key.startsWith("node_modules/")) return;
             Matcher m = NPM_LOCK_KEY_PATTERN.matcher(key);
             if (!m.matches()) return;
             String name = m.group(1);
@@ -507,12 +506,12 @@ public final class DependencyParser {
       Map<VirtualFile, Map<String, String>> resolvedVersions) {
     for (MavenProject mavenProject : projectsManager.getProjects()) {
       VirtualFile pom = mavenProject.getFile();
-      Map<String, String> resolvedIndex = pom != null ? new HashMap<>() : null;
+      Map<String, String> resolvedIndex = new HashMap<>();
       for (MavenArtifactNode node : mavenProject.getDependencyTree()) {
         // Start chain with the direct dependency itself
         collectMavenDependencies(node, pom, new ArrayList<>(), dependencies, resolvedIndex);
       }
-      if (resolvedIndex != null && !resolvedIndex.isEmpty()) {
+      if (pom != null && !resolvedIndex.isEmpty()) {
         resolvedVersions.put(pom, Map.copyOf(resolvedIndex));
       }
     }
@@ -611,9 +610,7 @@ public final class DependencyParser {
         result.add(new OsvPackage(fullName, Ecosystem.MAVEN, version, Set.of(currentChain)));
         // Record the resolved version for the annotator: this walk visits the tree in pre-order,
         // exactly like findResolvedVersion, so the first ADDED entry wins (putIfAbsent).
-        if (resolvedIndex != null) {
-          resolvedIndex.putIfAbsent(fullName, version);
-        }
+        resolvedIndex.putIfAbsent(fullName, version);
       } else {
         // Fail fast enough to be visible: a malformed artifact silently feeds bogus or empty OSV
         // queries, which is data loss that must not hide behind debug-level logging.
@@ -705,13 +702,10 @@ public final class DependencyParser {
       return;
     }
     Map<String, ? extends ExternalSourceSet> sourceSets = externalProject.getSourceSets();
-    if (sourceSets == null || sourceSets.isEmpty()) {
+    if (sourceSets.isEmpty()) {
       return;
     }
     for (ExternalSourceSet sourceSet : sourceSets.values()) {
-      if (sourceSet == null || sourceSet.getDependencies() == null) {
-        continue;
-      }
       boolean toolchain = isToolchainSourceSet(sourceSet);
       for (ExternalDependency dependency : sourceSet.getDependencies()) {
         collectSourceSetDependencyChains(dependency, List.of(), toolchain, chains, 0);
@@ -742,9 +736,6 @@ public final class DependencyParser {
       chains.computeIfAbsent(cacheKey, key -> new LinkedHashSet<>()).add(List.copyOf(next));
       chain = next;
     }
-    if (children == null) {
-      return;
-    }
     for (ExternalDependency child : children) {
       collectSourceSetDependencyChains(child, chain, toolchainSourceSet, chains, depth + 1);
     }
@@ -752,8 +743,7 @@ public final class DependencyParser {
 
   /** Source set the intellijPlatform toolchain injects for its own testing task ("…testUi"): ... */
   private static boolean isToolchainSourceSet(ExternalSourceSet sourceSet) {
-    String name = sourceSet.getName();
-    return name != null && name.endsWith("testUi");
+    return sourceSet.getName().endsWith("testUi");
   }
 
   private static boolean isPlatformSourceSetDependency(ExternalDependency dependency) {
@@ -778,7 +768,7 @@ public final class DependencyParser {
 
   private static List<File> artifactsOf(ExternalDependency dependency) {
     if (dependency instanceof ExternalMultiLibraryDependency multi) {
-      return multi.getFiles() == null ? List.of() : new ArrayList<>(multi.getFiles());
+      return new ArrayList<>(multi.getFiles());
     }
     if (dependency instanceof ExternalLibraryDependency library) {
       return library.getFile() == null ? List.of() : List.of(library.getFile());
@@ -807,12 +797,8 @@ public final class DependencyParser {
    * build script never declares it and its whole classpath comes from the IDE platform.
    */
   private static boolean isToolchainModule(DataNode<ModuleData> moduleNode) {
-    ModuleData data = moduleNode.getData();
-    if (data == null) {
-      return false;
-    }
-    String name = data.getModuleName() != null ? data.getModuleName() : data.getId();
-    return name != null && (name.endsWith(".testUi") || name.endsWith(":testUi"));
+    String name = moduleNode.getData().getModuleName();
+    return name.endsWith(".testUi") || name.endsWith(":testUi");
   }
 
   private static void collectDependencyChains(
@@ -824,9 +810,6 @@ public final class DependencyParser {
         ExternalSystemApiUtil.getChildren(node, ProjectKeys.LIBRARY_DEPENDENCY)) {
       LibraryDependencyData edgeData = dependency.getData();
       LibraryData lib = edgeData.getTarget();
-      if (lib == null) {
-        continue;
-      }
       String coordinate =
           lib.getGroupId() != null && lib.getArtifactId() != null
               ? lib.getGroupId() + ":" + lib.getArtifactId()
@@ -858,9 +841,6 @@ public final class DependencyParser {
       return true;
     }
     Set<String> binaries = lib.getPaths(LibraryPathType.BINARY);
-    if (binaries == null) {
-      return false;
-    }
     for (String binary : binaries) {
       if (isExtractedIdeJarPath(binary)) {
         return true;
@@ -882,9 +862,6 @@ public final class DependencyParser {
   @Nullable
   private static String recoverCoordinate(LibraryData lib) {
     Set<String> binaries = lib.getPaths(LibraryPathType.BINARY);
-    if (binaries == null) {
-      return null;
-    }
     for (String binary : binaries) {
       if (binary != null) {
         String coordinate = coordinateFromArtifactPath(binary);

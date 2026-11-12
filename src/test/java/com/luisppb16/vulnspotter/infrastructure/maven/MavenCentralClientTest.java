@@ -145,10 +145,8 @@ class MavenCentralClientTest {
   private MockedStatic<HttpRequests> httpRequests;
   private MockedStatic<VulnSpotterSettings> settingsMock;
 
-  private static String pomUrl(String group, String artifact, String version) {
-    return "https://repo1.maven.org/maven2/"
-        + group.replace('.', '/')
-        + "/"
+  private static String pomUrl(String artifact, String version) {
+    return "https://repo1.maven.org/maven2/org/acme/"
         + artifact
         + "/"
         + artifact
@@ -187,9 +185,9 @@ class MavenCentralClientTest {
     when(builder.readString()).thenReturn(content);
   }
 
-  private void stubFailingUrl(String url) throws IOException {
+  private void stubFailingUrl() throws IOException {
     RequestBuilder builder = mock(RequestBuilder.class);
-    httpRequests.when(() -> HttpRequests.request(url)).thenReturn(builder);
+    httpRequests.when(() -> HttpRequests.request(METADATA_URL)).thenReturn(builder);
     when(builder.connectTimeout(anyInt())).thenReturn(builder);
     when(builder.readTimeout(anyInt())).thenReturn(builder);
     when(builder.readString()).thenThrow(new IOException("404"));
@@ -201,8 +199,8 @@ class MavenCentralClientTest {
     // Given: the parent chain resolves the child through an imported BOM.
     httpRequests = mockStatic(HttpRequests.class);
     stubUrl(METADATA_URL, METADATA);
-    stubUrl(pomUrl("org.acme", "starter-web", "1.1.0"), ROOT_POM_WITH_BOM);
-    stubUrl(pomUrl("org.acme", "acme-bom", "2.0.0"), BOM_POM);
+    stubUrl(pomUrl("starter-web", "1.1.0"), ROOT_POM_WITH_BOM);
+    stubUrl(pomUrl("acme-bom", "2.0.0"), BOM_POM);
 
     // When: the installed parent version is 1.0.0 and the required child fix is 2.0.0.
     Optional<MavenCentralClient.FixingVersion> fixing =
@@ -218,8 +216,8 @@ class MavenCentralClientTest {
     // Given: the child is declared with a literal version inside an intermediate POM.
     httpRequests = mockStatic(HttpRequests.class);
     stubUrl(METADATA_URL, METADATA);
-    stubUrl(pomUrl("org.acme", "starter-web", "1.1.0"), ROOT_POM_WITH_WALK);
-    stubUrl(pomUrl("org.acme", "starter-json", "0.5.0"), JSON_POM_WITH_CHILD);
+    stubUrl(pomUrl("starter-web", "1.1.0"), ROOT_POM_WITH_WALK);
+    stubUrl(pomUrl("starter-json", "0.5.0"), JSON_POM_WITH_CHILD);
 
     // When
     Optional<MavenCentralClient.FixingVersion> fixing =
@@ -251,8 +249,8 @@ class MavenCentralClientTest {
         """;
     httpRequests = mockStatic(HttpRequests.class);
     stubUrl(METADATA_URL, METADATA);
-    stubUrl(pomUrl("org.acme", "starter-web", "1.1.0"), ROOT_POM_WITH_WALK);
-    stubUrl(pomUrl("org.acme", "starter-json", "0.5.0"), jsonPomWithProps);
+    stubUrl(pomUrl("starter-web", "1.1.0"), ROOT_POM_WITH_WALK);
+    stubUrl(pomUrl("starter-json", "0.5.0"), jsonPomWithProps);
 
     // When
     Optional<MavenCentralClient.FixingVersion> fixing =
@@ -267,7 +265,7 @@ class MavenCentralClientTest {
   void yieldsNoParentUpgradeWhenMetadataIsUnavailable() throws IOException {
     // Given: the version list of the parent cannot be fetched.
     httpRequests = mockStatic(HttpRequests.class);
-    stubFailingUrl(METADATA_URL);
+    stubFailingUrl();
 
     // When
     Optional<MavenCentralClient.FixingVersion> fixing =
@@ -283,7 +281,7 @@ class MavenCentralClientTest {
     // Given: the management entry's property does not resolve in any reachable POM.
     httpRequests = mockStatic(HttpRequests.class);
     stubUrl(METADATA_URL, METADATA);
-    stubUrl(pomUrl("org.acme", "starter-web", "1.1.0"), ROOT_POM_UNRESOLVABLE);
+    stubUrl(pomUrl("starter-web", "1.1.0"), ROOT_POM_UNRESOLVABLE);
 
     // When
     Optional<MavenCentralClient.FixingVersion> fixing =
@@ -317,8 +315,8 @@ class MavenCentralClientTest {
         """;
     httpRequests = mockStatic(HttpRequests.class);
     stubUrl(METADATA_URL, METADATA);
-    stubUrl(pomUrl("org.acme", "starter-web", "1.1.0"), ROOT_POM_WITH_BOM);
-    stubUrl(pomUrl("org.acme", "acme-bom", "2.0.0"), bomWithOldChild);
+    stubUrl(pomUrl("starter-web", "1.1.0"), ROOT_POM_WITH_BOM);
+    stubUrl(pomUrl("acme-bom", "2.0.0"), bomWithOldChild);
 
     // When
     Optional<MavenCentralClient.FixingVersion> fixing =

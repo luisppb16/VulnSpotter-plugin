@@ -10,6 +10,7 @@ package com.luisppb16.vulnspotter.testsupport;
 import java.util.List;
 import java.util.concurrent.AbstractExecutorService;
 import java.util.concurrent.TimeUnit;
+import org.jetbrains.annotations.NotNull;
 
 /** ExecutorService that runs every command inline on the calling thread. */
 public final class DirectExecutorService extends AbstractExecutorService {
@@ -18,7 +19,7 @@ public final class DirectExecutorService extends AbstractExecutorService {
   public void shutdown() {}
 
   @Override
-  public List<Runnable> shutdownNow() {
+  public @NotNull List<Runnable> shutdownNow() {
     return List.of();
   }
 
@@ -33,7 +34,7 @@ public final class DirectExecutorService extends AbstractExecutorService {
   }
 
   @Override
-  public boolean awaitTermination(long timeout, TimeUnit unit) {
+  public boolean awaitTermination(long timeout, @NotNull TimeUnit unit) {
     return true;
   }
 

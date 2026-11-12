@@ -61,7 +61,7 @@ class VulnSpotterConfigurableTest {
 
   @Test
   @DisplayName("should_not_be_modified_when_settings_match_ui_defaults")
-  void shouldNotBeModifiedWhenSettingsMatchUiDefaults() throws Exception {
+  void shouldNotBeModifiedWhenSettingsMatchUiDefaults() {
     // Given: settings with default values and a freshly built, reset form.
     configurable.createComponent();
     configurable.reset();
@@ -75,7 +75,7 @@ class VulnSpotterConfigurableTest {
 
   @Test
   @DisplayName("should_detect_and_apply_changed_analyze_on_project_open")
-  void shouldDetectAndApplyChangedAnalyzeOnProjectOpen() throws Exception {
+  void shouldDetectAndApplyChangedAnalyzeOnProjectOpen() {
     // Given: settings say on but the fresh form starts unchecked (the new factory default).
     when(settings.isAnalyzeOnProjectOpen()).thenReturn(true);
     configurable.createComponent();
@@ -108,9 +108,11 @@ class VulnSpotterConfigurableTest {
 
   @Test
   @DisplayName("should_detect_and_apply_changed_disable_vulnerability_cache")
-  void shouldDetectAndApplyChangedDisableVulnerabilityCache() throws Exception {
+  void shouldDetectAndApplyChangedDisableVulnerabilityCache() {
     // Given: the stored value is off but the form checkbox is ticked.
-    JBCheckBox disableCacheCheckBox = findDisableCacheCheckBox(configurable.createComponent());
+    Container component = configurable.createComponent();
+    assertThat(component).isNotNull();
+    JBCheckBox disableCacheCheckBox = findDisableCacheCheckBox(component);
     assertThat(disableCacheCheckBox).isNotNull();
     disableCacheCheckBox.setSelected(true);
 
@@ -125,10 +127,13 @@ class VulnSpotterConfigurableTest {
 
   @Test
   @DisplayName("should_reset_disable_vulnerability_cache_from_stored_value")
-  void shouldResetDisableVulnerabilityCacheFromStoredValue() throws Exception {
+  void shouldResetDisableVulnerabilityCacheFromStoredValue() {
     // Given: a stored on-value and a freshly built form whose checkbox starts unchecked.
     when(settings.isDisableVulnerabilityCache()).thenReturn(true);
-    JBCheckBox disableCacheCheckBox = findDisableCacheCheckBox(configurable.createComponent());
+    Container component = configurable.createComponent();
+    assertThat(component).isNotNull();
+    JBCheckBox disableCacheCheckBox = findDisableCacheCheckBox(component);
+    assertThat(disableCacheCheckBox).isNotNull();
     assertThat(disableCacheCheckBox.isSelected()).isFalse();
 
     // When

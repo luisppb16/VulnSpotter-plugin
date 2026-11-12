@@ -150,7 +150,7 @@ public final class VersionUtil {
         token.append(c);
       } else if (Character.isLetter(c)) {
         if (!token.isEmpty() && digits) {
-          items.add(new NumberItem(new BigInteger(token.toString())));
+          items.add(numberItem(token));
           token.setLength(0);
         }
         digits = false;
@@ -159,9 +159,7 @@ public final class VersionUtil {
         // Separator ('.', '-', '_', '+', etc.)
         if (!token.isEmpty()) {
           items.add(
-              digits
-                  ? new NumberItem(new BigInteger(token.toString()))
-                  : new QualifierItem(normalizeQualifier(token.toString())));
+              digits ? numberItem(token) : new QualifierItem(normalizeQualifier(token.toString())));
           token.setLength(0);
         }
         digits = false;
@@ -169,9 +167,7 @@ public final class VersionUtil {
     }
     if (!token.isEmpty()) {
       items.add(
-          digits
-              ? new NumberItem(new BigInteger(token.toString()))
-              : new QualifierItem(normalizeQualifier(token.toString())));
+          digits ? numberItem(token) : new QualifierItem(normalizeQualifier(token.toString())));
     }
 
     // Trim trailing items equivalent to the plain release (".0", ".RELEASE", ".Final", "ga")
@@ -181,9 +177,13 @@ public final class VersionUtil {
           (last instanceof NumberItem(BigInteger value) && value.signum() == 0)
               || (last instanceof QualifierItem(String qualifier) && qualifier.isEmpty());
       if (!nullValue) break;
-      items.remove(items.size() - 1);
+      items.removeLast();
     }
     return items;
+  }
+
+  private static NumberItem numberItem(CharSequence token) {
+    return new NumberItem(new BigInteger(token.toString()));
   }
 
   private static String normalizeQualifier(String qualifier) {

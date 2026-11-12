@@ -29,8 +29,8 @@ final class AutoScanRunner {
    * Invalidates the cached batch answers after a build-system sync (hydrated records revalidate by
    * their {@code modified} stamp) and runs the auto-scan when {@code autoScanOnSync} is enabled. A
    * re-import can change any dependency's resolved version, so every cached batch answer may be
-   * stale once a sync finishes — it is dropped whether or not an auto-scan follows, because a
-   * manual scan right after the sync must not consume stale cache either.
+   * stale once a sync finishes — it is dropped whether an auto-scan follows, because a manual scan
+   * right after the sync must not consume the stale cache.
    *
    * <p>Both build-system listeners share this, so the invalidation policy lives in exactly one
    * place.

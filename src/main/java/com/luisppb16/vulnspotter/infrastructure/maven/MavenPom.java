@@ -24,12 +24,7 @@ public record MavenPom(
     List<Dependency> dependencies) {
 
   /** Maven coordinate of a POM's parent: version is always present for a {@code <parent>}. */
-  public record Coordinate(String group, String artifact, @Nullable String version) {
-
-    public String coordinate() {
-      return group + ":" + artifact;
-    }
-  }
+  public record Coordinate(String group, String artifact, @Nullable String version) {}
 
   /**
    * One {@code <dependency>}, either under {@code <dependencyManagement>} or {@code

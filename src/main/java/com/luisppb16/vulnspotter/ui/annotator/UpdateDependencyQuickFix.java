@@ -48,9 +48,9 @@ public class UpdateDependencyQuickFix implements IntentionAction {
     this.targetVersion = targetVersion;
   }
 
-  /** Characters that may appear inside a group:artifact:version coordinate token. */
-  private static boolean isCoordinateChar(char c) {
-    return (c >= 'a' && c <= 'z')
+  /** True when the char terminates a coordinate token (it is not a coordinate character). */
+  private static boolean isCoordinateBoundary(char c) {
+    return !((c >= 'a' && c <= 'z')
         || (c >= 'A' && c <= 'Z')
         || (c >= '0' && c <= '9')
         || c == ':'
@@ -60,7 +60,7 @@ public class UpdateDependencyQuickFix implements IntentionAction {
         || c == '_'
         || c == '~'
         || c == '^'
-        || c == '/';
+        || c == '/');
   }
 
   @Override
@@ -201,8 +201,8 @@ public class UpdateDependencyQuickFix implements IntentionAction {
         break;
       }
       int end = idx + oldCoordinate.length();
-      boolean leftBounded = idx == 0 || !isCoordinateChar(text.charAt(idx - 1));
-      boolean rightBounded = end >= text.length() || !isCoordinateChar(text.charAt(end));
+      boolean leftBounded = idx == 0 || isCoordinateBoundary(text.charAt(idx - 1));
+      boolean rightBounded = end >= text.length() || isCoordinateBoundary(text.charAt(end));
       if (leftBounded && rightBounded) {
         document.replaceString(idx, end, newCoordinate);
         changed = true;

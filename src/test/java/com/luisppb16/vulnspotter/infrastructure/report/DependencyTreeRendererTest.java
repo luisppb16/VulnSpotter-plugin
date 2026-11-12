@@ -96,11 +96,13 @@ class DependencyTreeRendererTest {
 
     assertThat(text)
         .isEqualTo(
-            "project\n"
-                + "├─ a:b 1.0\n"
-                + "│  └─ ⚠️ t:c 2.0\n"
-                + "└─ d:e\n"
-                + "   └─ ⚠️ t:c 2.0\n");
+            """
+            project
+            ├─ a:b 1.0
+            │  └─ ⚠️ t:c 2.0
+            └─ d:e
+               └─ ⚠️ t:c 2.0
+            """);
   }
 
   @Test

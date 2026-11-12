@@ -24,12 +24,14 @@ public class VulnSpotterToolWindowBenchmarkTest {
       ThreadLocal.withInitial(() -> NumberFormat.getInstance(Locale.ROOT));
   private static final int ITERATIONS = 100000;
   private static final String SCORE = "7.5";
-
   private static final String REGEX = "Fixed(?:<[^>]+>|\\s){1,100}(\\d+\\.\\d+(?:\\.\\d+)?)";
   private static final Pattern PRECOMPILED_PATTERN =
       Pattern.compile(REGEX, Pattern.CASE_INSENSITIVE);
   private static final String HTML_SAMPLE =
       "<div>Some text here</div><span>Fixed</span>  <br> 1.2.3 and more text";
+
+  /** Consumes the regex tokens; keeps the group() work observable to the JIT. */
+  private static long regexTokens = 0;
 
   @Test
   public void benchmarkNumberFormatPerformance() throws ParseException {
@@ -123,14 +125,14 @@ public class VulnSpotterToolWindowBenchmarkTest {
     Pattern p = Pattern.compile(REGEX, Pattern.CASE_INSENSITIVE);
     Matcher m = p.matcher(HTML_SAMPLE);
     if (m.find()) {
-      m.group(1);
+      regexTokens += m.group(1).length();
     }
   }
 
   private void runOptimizedRegex() {
     Matcher m = PRECOMPILED_PATTERN.matcher(HTML_SAMPLE);
     if (m.find()) {
-      m.group(1);
+      regexTokens += m.group(1).length();
     }
   }
 }

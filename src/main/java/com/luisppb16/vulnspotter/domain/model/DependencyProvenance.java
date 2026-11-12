@@ -12,6 +12,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
+import org.jetbrains.annotations.Nullable;
 
 /**
  * How a scanned dependency reached the project, derived from its dependency chains: a chain of a
@@ -30,7 +31,7 @@ public record DependencyProvenance(Kind kind, List<String> transitiveRoots) {
   public static final String PLATFORM_ROOT = "intellijPlatform (provided)";
 
   /** True only for the synthetic platform root; a real {@code group:artifact} never matches. */
-  public static boolean isPlatformRoot(String node) {
+  public static boolean isPlatformRoot(@Nullable String node) {
     return PLATFORM_ROOT.equals(node);
   }
 
@@ -42,7 +43,7 @@ public record DependencyProvenance(Kind kind, List<String> transitiveRoots) {
         chains.stream()
             .filter(chain -> chain.size() > 1)
             .filter(chain -> !isPlatformRoot(chain.getFirst()))
-            .map(chain -> chain.getFirst())
+            .map(List::getFirst)
             .filter(Objects::nonNull)
             .distinct()
             .sorted()

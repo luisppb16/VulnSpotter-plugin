@@ -149,12 +149,20 @@ public class MavenCentralClient {
     return !VulnSpotterSettings.getInstance().isDisableVulnerabilityCache();
   }
 
+  /** Resolved disk-cache file for {@code key}, or {@code null} when the entry cannot be cached. */
+  @Nullable
+  private Path diskCacheFile(String key) {
+    String fileName = cacheFileName(key);
+    return cacheRoot == null || fileName == null ? null : cacheRoot.resolve(fileName);
+  }
+
+  /**
+   * The cached pom for {@code key}, when the disk holds an entry (negative entries included);
+   * {@code null} means "no entry" and an unreadable entry degrades to an empty result.
+   */
   @Nullable
   private Optional<MavenPom> readDiskCache(String key) {
-    if (cacheRoot == null) {
-      return null;
-    }
-    Path cached = cacheRoot.resolve(cacheFileName(key));
+    Path cached = diskCacheFile(key);
     if (cached == null || !Files.exists(cached)) {
       return null;
     }
@@ -166,13 +174,13 @@ public class MavenCentralClient {
   }
 
   private void writeDiskCache(String key, String xml) {
-    String fileName = cacheFileName(key);
-    if (cacheRoot == null || fileName == null) {
+    Path cached = diskCacheFile(key);
+    if (cached == null) {
       return;
     }
     try {
       Files.createDirectories(cacheRoot);
-      Files.writeString(cacheRoot.resolve(fileName), xml);
+      Files.writeString(cached, xml);
     } catch (IOException e) {
       LOG.info("Maven Central cache write failed for " + key, e);
     }
@@ -349,17 +357,21 @@ public class MavenCentralClient {
     }
     String key = group + ":" + artifact + ":" + version;
     boolean cacheable = cacheEnabled();
-    Optional<MavenPom> cached = cacheable ? pomCache.get(key) : null;
-    if (cached == null && cacheable) {
-      cached = readDiskCache(key);
-    }
-    if (cached == null) {
-      cached = fetchPom(group, artifact, version, key, state);
-      if (cacheable) {
-        pomCache.putIfAbsent(key, cached);
+    if (cacheable) {
+      Optional<MavenPom> cached = pomCache.get(key);
+      if (cached != null) {
+        return cached;
+      }
+      Optional<MavenPom> disk = readDiskCache(key);
+      if (disk != null) {
+        return disk;
       }
     }
-    return cached;
+    Optional<MavenPom> fetched = fetchPom(group, artifact, version, key, state);
+    if (cacheable) {
+      pomCache.putIfAbsent(key, fetched);
+    }
+    return fetched;
   }
 
   private Optional<MavenPom> fetchPom(

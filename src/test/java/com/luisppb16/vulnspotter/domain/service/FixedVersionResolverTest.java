@@ -91,8 +91,8 @@ class FixedVersionResolverTest {
 
       // Then: both windows are rendered, each with its own fix.
       assertThat(resolution.branches()).hasSize(2);
-      assertThat(resolution.branches().get(0).branchLabel()).isEqualTo("Branch 3.0.x");
-      assertThat(resolution.branches().get(0).rangeText()).isEqualTo(">=3.0.0, <3.1.7");
+      assertThat(resolution.branches().getFirst().branchLabel()).isEqualTo("Branch 3.0.x");
+      assertThat(resolution.branches().getFirst().rangeText()).isEqualTo(">=3.0.0, <3.1.7");
       assertThat(resolution.branches().get(0).fixedVersion()).isEqualTo("3.1.7");
       assertThat(resolution.branches().get(0).containsInstalledVersion()).isTrue();
       assertThat(resolution.branches().get(1).branchLabel()).isEqualTo("Branch 3.2.x");

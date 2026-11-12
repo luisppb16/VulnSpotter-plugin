@@ -81,10 +81,11 @@ class OsvModelTest {
     assertEquals("Summary", vuln.summary());
     assertEquals("Details", vuln.details());
     assertEquals(1, vuln.severity().size());
-    assertEquals("CVSS_V3", vuln.severity().get(0).type());
-    assertEquals("9.8", vuln.severity().get(0).score());
+    assertEquals("CVSS_V3", vuln.severity().getFirst().type());
+    assertEquals("9.8", vuln.severity().getFirst().score());
     assertEquals(1, vuln.affected().size());
-    assertEquals("1.0.1", vuln.affected().get(0).ranges().get(0).events().get(0).fixed());
+    assertEquals(
+        "1.0.1", vuln.affected().getFirst().ranges().getFirst().events().getFirst().fixed());
   }
 
   @Test
@@ -102,6 +103,6 @@ class OsvModelTest {
     OsvResponse response = objectMapper.readValue(json, OsvResponse.class);
     assertNotNull(response.vulns());
     assertEquals(1, response.vulns().size());
-    assertEquals("GHSA-123", response.vulns().get(0).id());
+    assertEquals("GHSA-123", response.vulns().getFirst().id());
   }
 }

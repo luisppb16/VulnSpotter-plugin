@@ -9,7 +9,6 @@ package com.luisppb16.vulnspotter.ui.toolwindow;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
 import com.intellij.openapi.Disposable;
@@ -64,6 +63,7 @@ class VulnSpotterToolWindowTest {
   private DetailsPanel detailsPanel;
 
   @BeforeEach
+  @SuppressWarnings("ResultOfMethodCallIgnored")
   void setUp() {
     scannerServiceMock = mockStatic(VulnerabilityScannerService.class);
     applicationManagerMock = mockStatic(ApplicationManager.class);

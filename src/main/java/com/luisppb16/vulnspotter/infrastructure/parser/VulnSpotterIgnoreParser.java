@@ -48,10 +48,8 @@ public final class VulnSpotterIgnoreParser {
     String ecosystem = pkg.ecosystem();
     boolean caseSensitive = Ecosystem.isCaseSensitive(ecosystem);
     String name = caseSensitive ? pkg.name() : pkg.name().toLowerCase(Locale.ROOT);
-    String qualified =
-        caseSensitive
-            ? pkg.ecosystem() + ":" + pkg.name()
-            : (pkg.ecosystem() + ":" + pkg.name()).toLowerCase(Locale.ROOT);
+    String unqualified = pkg.ecosystem() + ":" + pkg.name();
+    String qualified = caseSensitive ? unqualified : unqualified.toLowerCase(Locale.ROOT);
     String version = pkg.version();
 
     for (String pattern : patterns) {

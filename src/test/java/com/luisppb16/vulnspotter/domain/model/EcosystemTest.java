@@ -73,11 +73,13 @@ class EcosystemTest {
     // When / Then
     assertThat(Ecosystem.upgradeSnippet("Maven", "com.example:lib", "1.2.3"))
         .isEqualTo(
-            "<dependency>\n"
-                + "  <groupId>com.example</groupId>\n"
-                + "  <artifactId>lib</artifactId>\n"
-                + "  <version>1.2.3</version>\n"
-                + "</dependency>");
+            """
+            <dependency>
+              <groupId>com.example</groupId>
+              <artifactId>lib</artifactId>
+              <version>1.2.3</version>
+            </dependency>\
+            """);
     // A name without a group also renders a valid pom snippet.
     assertThat(Ecosystem.upgradeSnippet("Maven", "lib", "1.2.3"))
         .contains("<artifactId>lib</artifactId>");

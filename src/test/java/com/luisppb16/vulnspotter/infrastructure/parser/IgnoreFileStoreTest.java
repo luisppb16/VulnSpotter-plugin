@@ -31,12 +31,6 @@ class IgnoreFileStoreTest {
 
   @TempDir private Path tempDir;
 
-  private String writeIgnoreFile(String content) throws IOException {
-    Path ignoreFile = tempDir.resolve(IgnoreFileStore.FILE_NAME);
-    Files.writeString(ignoreFile, content);
-    return ignoreFile.toString();
-  }
-
   @Test
   @DisplayName("should_return_empty_when_file_does_not_exist")
   void shouldReturnEmptyWhenFileDoesNotExist() {
@@ -65,13 +59,17 @@ class IgnoreFileStoreTest {
   @DisplayName("should_skip_comments_and_blank_lines_and_keep_patterns_case_preserved")
   void shouldSkipCommentsAndBlankLines() throws IOException {
     // Given
-    writeIgnoreFile(
-        "# a comment\n"
-            + "\n"
-            + "  \n"
-            + "com.example:lib\n"
-            + "  com.other:*  \n"
-            + "Maven:com.example:lib@1.0.0\n");
+    Path ignoreFile = tempDir.resolve(IgnoreFileStore.FILE_NAME);
+    Files.writeString(
+        ignoreFile,
+        """
+        # a comment
+
+        \s
+        com.example:lib
+        \s\scom.other:*
+        Maven:com.example:lib@1.0.0
+        """);
 
     // When
     Set<String> patterns;

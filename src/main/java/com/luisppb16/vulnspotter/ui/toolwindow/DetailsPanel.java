@@ -13,9 +13,8 @@ import javax.swing.JComponent;
 /**
  * Abstraction over the HTML details panel rendering, decoupling the tool window from the concrete
  * engine (JCEF when available, a Swing {@link javax.swing.JEditorPane} fallback otherwise). All
- * JCEF/CEF types are confined to {@link
- * com.luisppb16.vulnspotter.ui.toolwindow.jcef.JcefDetailsPanel}, which is only loaded when the
- * JCEF plugin is present (see {@code vulnspotter-jcef.xml}).
+ * JCEF/CEF types are confined to the {@code jcef} submodule: its classes are only visible inside
+ * that optional module, loaded when the JCEF plugin is present (see {@code vulnspotter-jcef.xml}).
  */
 public interface DetailsPanel extends Disposable {
 

@@ -50,21 +50,20 @@ class OsvClientCacheDisabledTest {
   private MockedStatic<VulnSpotterSettings> settingsMock;
 
   /** Minimal helpers mirroring the real HttpRequests builder chain. */
-  private static void stubPost(MockedStatic<HttpRequests> http, String batchJson)
-      throws IOException {
+  private void stubPost() throws IOException {
     RequestBuilder postBuilder = mock(RequestBuilder.class);
-    http.when(() -> HttpRequests.post(anyString(), anyString())).thenReturn(postBuilder);
+    httpRequests.when(() -> HttpRequests.post(anyString(), anyString())).thenReturn(postBuilder);
     when(postBuilder.connectTimeout(anyInt())).thenReturn(postBuilder);
     when(postBuilder.readTimeout(anyInt())).thenReturn(postBuilder);
-    when(postBuilder.connect(any())).thenReturn(batchJson);
+    when(postBuilder.connect(any())).thenReturn(BATCH_JSON);
   }
 
-  private static void stubGet(MockedStatic<HttpRequests> http, String fullJson) throws IOException {
+  private void stubGet() throws IOException {
     RequestBuilder getBuilder = mock(RequestBuilder.class);
-    http.when(() -> HttpRequests.request(anyString())).thenReturn(getBuilder);
+    httpRequests.when(() -> HttpRequests.request(anyString())).thenReturn(getBuilder);
     when(getBuilder.connectTimeout(anyInt())).thenReturn(getBuilder);
     when(getBuilder.readTimeout(anyInt())).thenReturn(getBuilder);
-    when(getBuilder.readString()).thenReturn(fullJson);
+    when(getBuilder.readString()).thenReturn(FULL_JSON);
   }
 
   @BeforeEach
@@ -96,8 +95,8 @@ class OsvClientCacheDisabledTest {
   void shouldRefetchEveryScanWhileCacheIsDisabled() throws IOException {
     // Given: vulnerability caching disabled by the user; two scans run over the same package.
     httpRequests = mockStatic(HttpRequests.class);
-    stubPost(httpRequests, BATCH_JSON);
-    stubGet(httpRequests, FULL_JSON);
+    stubPost();
+    stubGet();
     when(settings.isDisableVulnerabilityCache()).thenReturn(true);
 
     // When
@@ -113,8 +112,8 @@ class OsvClientCacheDisabledTest {
   void shouldNotStoreAnswersWhileCacheIsDisabled() throws IOException {
     // Given: one scan runs with caching disabled.
     httpRequests = mockStatic(HttpRequests.class);
-    stubPost(httpRequests, BATCH_JSON);
-    stubGet(httpRequests, FULL_JSON);
+    stubPost();
+    stubGet();
     when(settings.isDisableVulnerabilityCache()).thenReturn(true, false);
 
     // When: the user re-enables caching and the same package re-scans.
@@ -130,8 +129,8 @@ class OsvClientCacheDisabledTest {
   void shouldServeCachedAnswersWhenCacheIsEnabled() throws IOException {
     // Given: caching stays enabled (default) and the same package scans twice.
     httpRequests = mockStatic(HttpRequests.class);
-    stubPost(httpRequests, BATCH_JSON);
-    stubGet(httpRequests, FULL_JSON);
+    stubPost();
+    stubGet();
     when(settings.isDisableVulnerabilityCache()).thenReturn(false);
 
     // When
@@ -148,8 +147,8 @@ class OsvClientCacheDisabledTest {
   void shouldRevalidateHydrationByStampWhileCacheIsDisabled() throws IOException {
     // Given: caching disabled, two scans carrying an unchanged "modified" stamp in the batch.
     httpRequests = mockStatic(HttpRequests.class);
-    stubPost(httpRequests, BATCH_JSON);
-    stubGet(httpRequests, FULL_JSON);
+    stubPost();
+    stubGet();
     when(settings.isDisableVulnerabilityCache()).thenReturn(true);
 
     // When

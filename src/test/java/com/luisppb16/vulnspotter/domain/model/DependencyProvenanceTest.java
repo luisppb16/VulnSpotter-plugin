@@ -159,6 +159,6 @@ class DependencyProvenanceTest {
   @DisplayName("isPlatformRoot_matches_only_the_synthetic_root")
   void isPlatformRootMatchesOnlyTheSyntheticRoot() {
     assertThat(DependencyProvenance.isPlatformRoot(DependencyProvenance.PLATFORM_ROOT)).isTrue();
-    assertThat(DependencyProvenance.isPlatformRoot(null)).isFalse();
+    assertThat(DependencyProvenance.isPlatformRoot("com.example:lib")).isFalse();
   }
 }

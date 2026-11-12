@@ -87,11 +87,9 @@ class ProjectOpenScanActivityTest {
     notificationsMock.close();
   }
 
-  private List<VulnerabilityScannerService.ScanResult> stubSuccessfulScan(
-      OsvVulnerability... vulns) {
+  private void stubSuccessfulScan(OsvVulnerability... vulns) {
     List<VulnerabilityScannerService.ScanResult> results = List.of(scanResult(vulns));
     when(scanner.scanDependencies()).thenReturn(CompletableFuture.completedFuture(results));
-    return results;
   }
 
   @Test
@@ -126,8 +124,7 @@ class ProjectOpenScanActivityTest {
   @DisplayName("execute scans when enabled and stores the results")
   void executeScansAndStoresResultsWhenEnabled() {
     // Given: the toggle is on and the scan completes without critical findings.
-    List<VulnerabilityScannerService.ScanResult> results =
-        stubSuccessfulScan(vulnerabilityWithDatabaseSeverity(SeverityAnalyzer.HIGH));
+    stubSuccessfulScan(vulnerabilityWithDatabaseSeverity(SeverityAnalyzer.HIGH));
 
     // When: the project-open activity runs.
     Object result = activity.execute(project, continuation);
@@ -145,8 +142,7 @@ class ProjectOpenScanActivityTest {
   @DisplayName("execute warns the user when the scan finds a critical vulnerability")
   void executeWarnsOnCriticalResults() {
     // Given: the toggle is on and the scan completes with a critical finding.
-    List<VulnerabilityScannerService.ScanResult> results =
-        stubSuccessfulScan(vulnerabilityWithDatabaseSeverity(SeverityAnalyzer.CRITICAL));
+    stubSuccessfulScan(vulnerabilityWithDatabaseSeverity(SeverityAnalyzer.CRITICAL));
 
     // When: the project-open activity runs.
     Object result = activity.execute(project, continuation);

@@ -180,7 +180,7 @@ public final class SeverityAnalyzer {
     };
   }
 
-  /** Get highest severity from a list of vulnerabilities. */
+  /** Get the highest severity from a list of vulnerabilities. */
   public static String getHighestSeverity(List<OsvVulnerability> vulnerabilities) {
     int maxLevel =
         (vulnerabilities == null || vulnerabilities.isEmpty())

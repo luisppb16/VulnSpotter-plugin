@@ -10,7 +10,6 @@ package com.luisppb16.vulnspotter.ui.toolwindow.jcef;
 import com.intellij.ide.BrowserUtil;
 import com.intellij.openapi.util.Disposer;
 import com.intellij.ui.jcef.JBCefBrowser;
-import com.intellij.ui.jcef.JBCefClient;
 import com.intellij.util.net.ProxySettings;
 import com.luisppb16.vulnspotter.ui.toolwindow.DetailsPanel;
 import javax.swing.JComponent;
@@ -42,26 +41,25 @@ final class JcefDetailsPanel implements DetailsPanel {
     Disposer.register(this, browser);
 
     // Open links (user gestures) in the system browser instead of navigating inside the panel.
-    JBCefClient client = this.browser.getJBCefClient();
-    if (client != null) {
-      client.addRequestHandler(
-          new CefRequestHandlerAdapter() {
-            @Override
-            public boolean onBeforeBrowse(
-                CefBrowser browser,
-                CefFrame frame,
-                CefRequest request,
-                boolean userGesture,
-                boolean isRedirect) {
-              if (userGesture) {
-                BrowserUtil.browse(request.getURL());
-                return true;
+    this.browser
+        .getJBCefClient()
+        .addRequestHandler(
+            new CefRequestHandlerAdapter() {
+              @Override
+              public boolean onBeforeBrowse(
+                  CefBrowser browser,
+                  CefFrame frame,
+                  CefRequest request,
+                  boolean userGesture,
+                  boolean isRedirect) {
+                if (userGesture) {
+                  BrowserUtil.browse(request.getURL());
+                  return true;
+                }
+                return false;
               }
-              return false;
-            }
-          },
-          this.browser.getCefBrowser());
-    }
+            },
+            this.browser.getCefBrowser());
   }
 
   @Override

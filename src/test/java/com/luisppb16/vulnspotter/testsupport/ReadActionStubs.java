@@ -33,7 +33,7 @@ public final class ReadActionStubs {
   }
 
   /** Installs the {@code nonBlocking → submit} stub on an open {@link MockedStatic}. */
-  @SuppressWarnings("rawtypes")
+  @SuppressWarnings("unchecked")
   public static void installNonBlockingSubmitStub(MockedStatic<ReadAction> readActionMock) {
     readActionMock
         .when(() -> ReadAction.nonBlocking(any(Callable.class)))

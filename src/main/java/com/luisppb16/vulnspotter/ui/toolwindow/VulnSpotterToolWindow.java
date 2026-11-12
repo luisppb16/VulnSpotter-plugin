@@ -85,6 +85,7 @@ import javax.swing.table.DefaultTableCellRenderer;
 import javax.swing.table.DefaultTableModel;
 import javax.swing.table.TableColumn;
 import javax.swing.table.TableRowSorter;
+import org.jetbrains.annotations.NotNull;
 
 /**
  * Tool window UI for VulnSpotter: results table with severity ranking plus an HTML details panel
@@ -204,7 +205,7 @@ public final class VulnSpotterToolWindow implements Disposable {
     searchField.addDocumentListener(
         new DocumentAdapter() {
           @Override
-          protected void textChanged(DocumentEvent e) {
+          protected void textChanged(@NotNull DocumentEvent e) {
             applyFilters();
           }
         });
@@ -475,34 +476,7 @@ public final class VulnSpotterToolWindow implements Disposable {
     menu.add(openOsv);
 
     // Submenu to open every vulnerability advisory of the selected dependency at once.
-    JMenu openAll = new JMenu("Open all vulnerabilities");
-    openAll.setIcon(AllIcons.Ide.External_link_arrow);
-    openAll.addMenuListener(
-        new MenuListener() {
-          @Override
-          public void menuSelected(MenuEvent e) {
-            openAll.removeAll();
-            selectedResult()
-                .filter(result -> !result.vulnerabilities().isEmpty())
-                .ifPresentOrElse(
-                    result -> {
-                      for (OsvVulnerability vuln : result.vulnerabilities()) {
-                        JMenuItem item = new JMenuItem(vuln.id());
-                        item.addActionListener(ev ->
-                            BrowserUtil.browse(ProjectConstants.OSV_WEB_VULN_URL + vuln.id()));
-                        openAll.add(item);
-                      }
-                    },
-                    () -> openAll.add(new JMenuItem("No vulnerabilities")));
-          }
-
-          @Override
-          public void menuDeselected(MenuEvent e) {}
-
-          @Override
-          public void menuCanceled(MenuEvent e) {}
-        });
-    menu.add(openAll);
+    menu.add(createOpenAllSubmenu());
 
     menu.addSeparator();
 
@@ -734,9 +708,10 @@ public final class VulnSpotterToolWindow implements Disposable {
   }
 
   /** Appends the rows with a single table event. */
-  @SuppressWarnings({"unchecked", "rawtypes"})
+  @SuppressWarnings("unchecked")
   private void insertRows(List<Object[]> rows) {
-    Vector<Vector> dataVector = tableModel.getDataVector();
+    Vector<Vector<Object>> dataVector =
+        (Vector<Vector<Object>>) (Vector<?>) tableModel.getDataVector();
     int firstRow = dataVector.size();
     for (Object[] cells : rows) {
       Vector<Object> row = new Vector<>(Arrays.asList(cells));
@@ -755,19 +730,52 @@ public final class VulnSpotterToolWindow implements Disposable {
       ScanUiPhase.CANCELLED.apply(this, "Scan cancelled", false);
       return;
     }
-    String message =
-        switch (cause) {
-          case TimeoutException _ ->
-              "The scan timed out after "
-                  + SCAN_TIMEOUT_SECONDS
-                  + "s. Try again or narrow the project.";
-          default -> ExceptionUtil.getNonEmptyMessage(cause, cause.getClass().getSimpleName());
-        };
+    String message;
+    if (cause instanceof TimeoutException) {
+      message =
+          "The scan timed out after "
+              + SCAN_TIMEOUT_SECONDS
+              + "s. Try again or narrow the project.";
+    } else {
+      message = ExceptionUtil.getNonEmptyMessage(cause, cause.getClass().getSimpleName());
+    }
     ScanUiPhase.FAILED.apply(this, "Scan failed: " + message, false);
     VulnSpotterNotifications.notifyError(
         project,
         "VulnSpotter scan failed",
         "The vulnerability scan could not be completed: " + message);
+  }
+
+  /** Submenu that opens every vulnerability advisory of the selected dependency at once. */
+  private JMenu createOpenAllSubmenu() {
+    JMenu openAll = new JMenu("Open all vulnerabilities");
+    openAll.setIcon(AllIcons.Ide.External_link_arrow);
+    openAll.addMenuListener(
+        new MenuListener() {
+          @Override
+          public void menuSelected(MenuEvent e) {
+            openAll.removeAll();
+            selectedResult()
+                .filter(result -> !result.vulnerabilities().isEmpty())
+                .ifPresentOrElse(
+                    result -> {
+                      for (OsvVulnerability vuln : result.vulnerabilities()) {
+                        JMenuItem item = new JMenuItem(vuln.id());
+                        item.addActionListener(ev ->
+                            BrowserUtil.browse(ProjectConstants.OSV_WEB_VULN_URL + vuln.id()));
+                        openAll.add(item);
+                      }
+                    },
+                    () -> openAll.add(new JMenuItem("No vulnerabilities")));
+          }
+
+          @Override
+          public void menuDeselected(MenuEvent e) {}
+
+          @Override
+          public void menuCanceled(MenuEvent e) {}
+        });
+    return openAll;
   }
 
   private void showExportMenu() {
@@ -781,9 +789,9 @@ public final class VulnSpotterToolWindow implements Disposable {
             "Export Markdown");
     // A JBPopup list renders each row with the IDE's native selection styling, so the option under
     // the cursor is clearly highlighted in both light and dark themes (and keyboard-navigable),
-    // unlike a plain JPopupMenu whose hover cue depends on the host look-and-feel.
+    // unlike a plain JPopupMenu, whose hover cue depends on the host look and feel.
     ListPopupStep<String> step =
-        new BaseListPopupStep<String>("Export report", items) {
+        new BaseListPopupStep<>("Export Report", items) {
           @Override
           public PopupStep<?> onChosen(String selected, boolean finalChoice) {
             exportReport(selected.substring("Export ".length()).toLowerCase(Locale.ROOT));
@@ -981,7 +989,7 @@ public final class VulnSpotterToolWindow implements Disposable {
               ApplicationManager.getApplication()
                   .invokeLater(
                       () -> {
-                        // A in-flight scan has already wiped the results: repainting this
+                        // An in-flight scan has already wiped the results: repainting this
                         // selection now would show a superseded snapshot.
                         if (activeScan == null && stillSelected(result)) {
                           showDetails(result);

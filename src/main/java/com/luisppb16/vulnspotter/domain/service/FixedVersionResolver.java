@@ -70,7 +70,7 @@ public final class FixedVersionResolver {
         continue;
       }
       windowsFrom(applicableRanges(vuln, packageName).toList(), currentVersion).stream()
-          .filter(w -> w.containsInstalledVersion())
+          .filter(AffectedWindow::containsInstalledVersion)
           .map(AffectedWindow::fixedVersion)
           .filter(Objects::nonNull)
           .distinct()
@@ -141,7 +141,7 @@ public final class FixedVersionResolver {
         fixForInstalledBranch(windows, currentVersion), rangeTexts(windows), windows);
   }
 
-  /** The fixed versions of the branches that contain the installed version, best first. */
+  /** The fixed versions of the branches that contain the installed version, best-first order. */
   private static String fixForInstalledBranch(List<AffectedWindow> windows, String installed) {
     if (windows.isEmpty()) {
       return UNKNOWN;
@@ -215,13 +215,10 @@ public final class FixedVersionResolver {
           continue;
         }
         String reopened = nonBlank(event.introduced());
-        if (reopened != null && introduced != null) {
-          windows.add(window(introduced, fixed, lastAffected, limit, installed));
-          fixed = null;
-          lastAffected = null;
-          limit = null;
-        }
         if (reopened != null) {
+          if (introduced != null) {
+            windows.add(window(introduced, null, null, null, installed));
+          }
           introduced = reopened;
         }
         String f = nonBlank(event.fixed());
@@ -251,7 +248,7 @@ public final class FixedVersionResolver {
     return List.copyOf(new LinkedHashSet<>(windows));
   }
 
-  /** Opens at {@code introduced} (normalised to {@code "0"} when absent) with the given closes. */
+  /** Opens at {@code introduced} (normalized to {@code "0"} when absent) with the given closes. */
   private static AffectedWindow window(
       String introduced, String fixed, String lastAffected, String limit, String installed) {
     String intro = (introduced == null || introduced.isBlank()) ? "0" : introduced;

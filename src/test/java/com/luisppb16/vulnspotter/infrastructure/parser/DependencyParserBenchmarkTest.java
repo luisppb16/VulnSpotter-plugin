@@ -64,6 +64,7 @@ class DependencyParserBenchmarkTest {
   private AutoCloseable mocks;
 
   @BeforeEach
+  @SuppressWarnings("ResultOfMethodCallIgnored")
   void setUp() {
     mocks = MockitoAnnotations.openMocks(this);
     mavenProjectsManagerMock = mockStatic(MavenProjectsManager.class);
@@ -110,7 +111,7 @@ class DependencyParserBenchmarkTest {
 
   @Test
   void benchmarkRedundantParsing() {
-    // Setup a scenario where Maven has projects AND OrderEnumerator has the same libraries.
+    // Set up a scenario where Maven has projects AND OrderEnumerator has the same libraries.
     int depCount = 5000;
 
     // 1. Setup Maven Dependencies

@@ -177,7 +177,7 @@ class OsvClientRevalidationTest {
 
     // Then: both scans hydrated the id (exactly two GETs), and neither row is the bare record.
     httpRequests.verify(() -> HttpRequests.request(anyString()), times(2));
-    assertEquals("s", first.results().get(0).vulns().get(0).summary());
-    assertEquals("s", second.results().get(0).vulns().get(0).summary());
+    assertEquals("s", first.results().getFirst().vulns().getFirst().summary());
+    assertEquals("s", second.results().getFirst().vulns().getFirst().summary());
   }
 }

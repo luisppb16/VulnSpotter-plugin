@@ -227,7 +227,7 @@ public class OsvClient {
     try {
       return CompletableFuture.supplyAsync(() -> doCheckDependencies(packages), executorService);
     } catch (java.util.concurrent.RejectedExecutionException e) {
-      // The owning project service was disposed mid-scan. Fail as cancelled: an empty answer
+      // The owning project service was disposed mid-scan. Fail as canceled: an empty answer
       // would read as "every package is safe", which the scanner must never imply.
       return CompletableFuture.failedFuture(
           new java.util.concurrent.CancellationException("Scan pipeline already shut down"));
@@ -300,8 +300,7 @@ public class OsvClient {
     for (int start = 0; start < queries.size(); start += MAX_BATCH_SIZE) {
       List<PendingQuery> pending =
           IntStream.rangeClosed(start, Math.min(start + MAX_BATCH_SIZE, queries.size()) - 1)
-              .mapToObj(i -> i)
-              .map(i -> new PendingQuery(queries.get(i), i))
+              .mapToObj(i -> new PendingQuery(queries.get(i), i))
               .toList();
 
       for (int page = 0; page < MAX_PAGES && !pending.isEmpty(); page++) {
@@ -340,7 +339,7 @@ public class OsvClient {
   private OsvBatchResponse postBatch(List<OsvQuery> queries) {
     try {
       String requestBody = Json.MAPPER.writeValueAsString(new OsvBatchQuery(queries));
-      String responseBody = postWithRetry(ProjectConstants.OSV_API_BATCH_URL, requestBody);
+      String responseBody = postWithRetry(requestBody);
       if (responseBody == null || responseBody.isEmpty()) {
         throw new OsvClientException("Empty response from OSV batch API", null);
       }
@@ -414,10 +413,10 @@ public class OsvClient {
             .readString());
   }
 
-  /** POST with limited retries for transient failures. */
-  private String postWithRetry(String url, String requestBody) throws IOException {
+  /** POST with limited retries for transient failures, against the OSV batch endpoint. */
+  private String postWithRetry(String requestBody) throws IOException {
     return withRetry(() ->
-        HttpRequests.post(url, "application/json")
+        HttpRequests.post(ProjectConstants.OSV_API_BATCH_URL, "application/json")
             .connectTimeout(HTTP_TIMEOUT_MS)
             .readTimeout(HTTP_TIMEOUT_MS)
             .connect(request -> {
@@ -440,7 +439,7 @@ public class OsvClient {
    * hydrate), plus the ids whose batch record carries no usable stamp. A missing {@code modified}
    * proves nothing about a cached copy, so unstamped ids are never served from the cache — they are
    * fetched every scan, because omitting them silently degraded those advisories to bare id-only
-   * rows that lost severity, summary, ranges, fixed versions and references.
+   * rows that lost severity, summary, ranges, fixed versions and their references.
    */
   private record IdsToHydrate(Map<String, String> modifiedById, Set<String> unstampedIds) {}
 

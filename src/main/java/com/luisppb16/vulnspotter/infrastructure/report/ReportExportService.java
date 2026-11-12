@@ -538,7 +538,6 @@ public final class ReportExportService {
   private static String sarifLevel(String severity) {
     return switch (SeverityAnalyzer.severityToEscalation(severity)) {
       case 0 -> "error";
-      case 1 -> "warning";
       case 2 -> "note";
       default -> "warning";
     };

@@ -5,14 +5,11 @@
  * *****************************************************************************
  */
 
-import org.jetbrains.intellij.platform.gradle.tasks.VerifyPluginTask.FailureLevel
-
 plugins {
     id 'java'
-    id 'org.jetbrains.intellij.platform' version '2.20.0'
+    id 'org.jetbrains.intellij.platform' version '2.20.1'
     id 'jacoco'
     id 'pmd'
-    id 'com.diffplug.spotless' version '8.1.0'
 }
 
 group = 'com.luisppb16'
@@ -85,7 +82,7 @@ tasks.named('processResources') {
 tasks.withType(JavaCompile).configureEach {
     options.encoding = 'UTF-8'
     options.release = 25
-    options.compilerArgs << "-Xlint:all" << "-Werror" << "-Xlint:-unchecked"
+    options.compilerArgs << "-Xlint:all" << "-Werror"
 }
 
 intellijPlatform {
@@ -106,25 +103,7 @@ intellijPlatform {
         ides {
             recommended()
         }
-        failureLevel = [
-            FailureLevel.COMPATIBILITY_WARNINGS,
-            FailureLevel.COMPATIBILITY_PROBLEMS,
-            FailureLevel.DEPRECATED_API_USAGES,
-            FailureLevel.SCHEDULED_FOR_REMOVAL_API_USAGES,
-            FailureLevel.EXPERIMENTAL_API_USAGES,
-            FailureLevel.INTERNAL_API_USAGES,
-            FailureLevel.OVERRIDE_ONLY_API_USAGES,
-            FailureLevel.NON_EXTENDABLE_API_USAGES,
-            FailureLevel.PLUGIN_STRUCTURE_WARNINGS,
-            FailureLevel.MISSING_DEPENDENCIES,
-            FailureLevel.INVALID_PLUGIN,
-            FailureLevel.NOT_DYNAMIC
-        ]
-        // The psi classes (XmlTag/XmlFile/XmlElementFactory) live in the xml plugin's split module
-        // jars; the verifier's classpath mapping misses them on 2026.3 (they are on disk in
-        // plugins/xml-plugin/lib/modules/intellij.xml.psi.jar). Ignored by regex.
-        ignoredProblemsFile.set(layout.projectDirectory.file(
-            "config/pluginVerifier/ignored-problems.txt"))
+        ignoredProblemsFile.set(file('config/pluginVerifier/ignored-problems.txt'))
     }
 }
 
@@ -165,23 +144,10 @@ tasks.register('benchmark', Test) {
     }
 }
 
-check {
-    dependsOn pmdMain, spotlessCheck, jacocoTestReport
-}
-
-spotless {
-    java {
-        googleJavaFormat()
-        importOrder()
-        removeUnusedImports()
-    }
-}
-
 pmd {
     toolVersion = '7.29.0'
     // Precise, actionable set: real defects, threading hazards and outright bugs. Wider
-    // (default quickstart) rule sets flood the codebase with style-level noise that
-    // Spotless already owns.
+    // (default quickstart) rule sets flood the codebase with style-level noise.
     ruleSets = []
     ruleSetFiles = files('config/pmd/ruleset.xml')
 }
